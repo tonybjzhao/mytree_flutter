@@ -21,7 +21,7 @@ void main() {
     }
 
     expect(find.text('MyTree'), findsOneWidget);
-    expect(find.text('Lives you can grow'), findsOneWidget);
+    expect(find.text('Your lives'), findsOneWidget);
     expect(find.text('Water today'), findsOneWidget);
     expect(find.text('Quietly growing'), findsOneWidget);
   });

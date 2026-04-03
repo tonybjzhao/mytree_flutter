@@ -17,7 +17,7 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
-  static const int _maxTreeSlots = 3;
+  static const int _freeLockedSlots = 2;
 
   final TreeService _treeService = TreeService();
 
@@ -173,7 +173,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   Future<void> _handleAddTree() async {
     final collection = _collection;
     if (collection == null) return;
-    if (collection.trees.length >= _maxTreeSlots) return;
 
     // Free users can only keep 1 tree.
     final freeLimitReached = !_premiumUnlocked && collection.trees.isNotEmpty;
@@ -320,7 +319,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                     const Align(
                       alignment: Alignment.centerLeft,
                       child: Text(
-                        'Lives you can grow',
+                        'Your lives',
                         style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
@@ -334,7 +333,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                       trees: _collection!.trees,
                       currentIndex: _collection!.currentIndex,
                       premiumUnlocked: _premiumUnlocked,
-                      maxSlots: _maxTreeSlots,
+                      lockedSlotCount: _freeLockedSlots,
                       onSelect: _selectTree,
                       onLockedTap: () {
                         _shouldAddAfterUnlock = true;
@@ -422,11 +421,36 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                                       );
                                     },
                                   ),
-                                  Transform.scale(
-                                    scale: 1.4 * _pulseAnimation.value,
-                                    child: Transform.rotate(
-                                      angle: _treeSwayAngle(tree),
-                                      child: TreeView(tree: tree),
+                                  AnimatedSwitcher(
+                                    duration: const Duration(milliseconds: 280),
+                                    switchInCurve: Curves.easeOutCubic,
+                                    switchOutCurve: Curves.easeInCubic,
+                                    transitionBuilder: (child, animation) {
+                                      final fade = CurvedAnimation(
+                                        parent: animation,
+                                        curve: Curves.easeOut,
+                                      );
+                                      final scale = Tween<double>(
+                                        begin: 0.96,
+                                        end: 1.0,
+                                      ).animate(fade);
+                                      return FadeTransition(
+                                        opacity: fade,
+                                        child: ScaleTransition(
+                                          scale: scale,
+                                          child: child,
+                                        ),
+                                      );
+                                    },
+                                    child: Transform.scale(
+                                      key: ValueKey(
+                                        '${_collection!.currentIndex}-${tree.streakDays}-${tree.healthState.name}',
+                                      ),
+                                      scale: 1.4 * _pulseAnimation.value,
+                                      child: Transform.rotate(
+                                        angle: _treeSwayAngle(tree),
+                                        child: TreeView(tree: tree),
+                                      ),
                                     ),
                                   ),
                                 ],
@@ -576,7 +600,7 @@ class _TreeSwitcher extends StatelessWidget {
     required this.trees,
     required this.currentIndex,
     required this.premiumUnlocked,
-    required this.maxSlots,
+    required this.lockedSlotCount,
     required this.onSelect,
     required this.onLockedTap,
     required this.onAdd,
@@ -585,36 +609,35 @@ class _TreeSwitcher extends StatelessWidget {
   final List<TreeModel> trees;
   final int currentIndex;
   final bool premiumUnlocked;
-  final int maxSlots;
+  final int lockedSlotCount;
   final ValueChanged<int> onSelect;
   final VoidCallback onLockedTap;
   final VoidCallback onAdd;
 
   @override
   Widget build(BuildContext context) {
-    final canAdd = trees.length < maxSlots;
+    final itemCount = premiumUnlocked
+        ? trees.length + 1
+        : trees.length + lockedSlotCount + 1;
 
     return SizedBox(
       height: 58,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
-        itemCount: maxSlots + 1,
+        itemCount: itemCount,
         separatorBuilder: (context, _) => const SizedBox(width: 10),
         itemBuilder: (context, index) {
-          if (index == maxSlots) {
+          if (index == itemCount - 1) {
             return GestureDetector(
-              onTap: canAdd ? onAdd : null,
-              child: Opacity(
-                opacity: canAdd ? 1 : 0.5,
-                child: Container(
-                  width: 52,
-                  height: 52,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFE7EFEA),
-                    borderRadius: BorderRadius.circular(26),
-                  ),
-                  child: const Icon(Icons.add, color: Color(0xFF5C8D7C)),
+              onTap: onAdd,
+              child: Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE7EFEA),
+                  borderRadius: BorderRadius.circular(26),
                 ),
+                child: const Icon(Icons.add, color: Color(0xFF5C8D7C)),
               ),
             );
           }
@@ -686,9 +709,9 @@ class _TreeSwitcher extends StatelessWidget {
                     : null,
               ),
               child: Center(
-                child: Transform.scale(
-                  scale: selected ? 0.22 : 0.18,
-                  child: TreeView(tree: tree),
+                child: Text(
+                  _slotEmoji(tree),
+                  style: TextStyle(fontSize: selected ? 24 : 20),
                 ),
               ),
             ),
@@ -696,6 +719,15 @@ class _TreeSwitcher extends StatelessWidget {
         },
       ),
     );
+  }
+
+  String _slotEmoji(TreeModel tree) {
+    if (tree.healthState == TreeHealthState.dead) return '☠️';
+    return switch (tree.growthStage) {
+      TreeGrowthStage.seed => '🌱',
+      TreeGrowthStage.sprout || TreeGrowthStage.small => '🌿',
+      TreeGrowthStage.young || TreeGrowthStage.mature => '🌳',
+    };
   }
 }
 
