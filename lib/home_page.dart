@@ -3,6 +3,9 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'premium_service.dart';
+
+import 'tree_collection_model.dart';
 import 'tree_model.dart';
 import 'tree_service.dart';
 
@@ -16,7 +19,11 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   final TreeService _treeService = TreeService();
 
-  TreeModel? _tree;
+  final PremiumService _premiumService = PremiumService();
+
+  TreeCollectionModel? _collection;
+  bool _premiumUnlocked = false;
+  bool _shouldAddAfterUnlock = false;
   bool _loading = true;
   bool _watering = false;
 
@@ -73,18 +80,21 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
   Future<void> _load() async {
     setState(() => _loading = true);
-    final tree = await _treeService.loadTree();
+    final collection = await _treeService.loadCollection();
+    final premium = await _premiumService.isPremiumUnlocked();
     if (!mounted) return;
     setState(() {
-      _tree = tree;
+      _collection = collection;
+      _premiumUnlocked = premium;
       _loading = false;
     });
   }
 
   Future<void> _waterToday() async {
-    if (_tree == null || _watering) return;
-    if (_tree!.hasWateredToday) return;
-    if (_tree!.healthState == TreeHealthState.dead) return;
+    final tree = _collection?.currentTree;
+    if (tree == null || _watering) return;
+    if (tree.hasWateredToday) return;
+    if (tree.healthState == TreeHealthState.dead) return;
 
     setState(() => _watering = true);
 
@@ -101,19 +111,155 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       setState(() => _waterButtonOverride = null);
     });
 
-    final updated = await _treeService.waterToday();
-
+    final updatedCollection = await _treeService.waterCurrentTree();
     if (!mounted) return;
     setState(() {
-      _tree = updated;
+      _collection = updatedCollection;
       _watering = false;
     });
   }
 
   Future<void> _restart() async {
-    final updated = await _treeService.restartTree();
+    final updated = await _treeService.restartCurrentTree();
     if (!mounted) return;
-    setState(() => _tree = updated);
+    setState(() => _collection = updated);
+  }
+
+  Future<void> _selectTree(int index) async {
+    final updated = await _treeService.selectTree(index);
+    if (!mounted) return;
+    setState(() => _collection = updated);
+  }
+
+  Future<void> _handleAddTree() async {
+    final collection = _collection;
+    if (collection == null) return;
+
+    // Free users can only keep 1 tree.
+    final freeLimitReached =
+        !_premiumUnlocked && collection.trees.isNotEmpty;
+    if (freeLimitReached) {
+      _shouldAddAfterUnlock = true;
+      _showPaywall();
+      return;
+    }
+
+    _shouldAddAfterUnlock = false;
+    final updated = await _treeService.addTree();
+    if (!mounted) return;
+    setState(() => _collection = updated);
+  }
+
+  void _showPaywall() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 20, 24, 28),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 42,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFD8DED9),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                const Text(
+                  '🌱   🌿   🌳',
+                  style: TextStyle(fontSize: 28),
+                ),
+                const SizedBox(height: 18),
+                const Text(
+                  'Grow more than one life',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF2E5449),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                const Text(
+                  'Care for different parts of your life.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Color(0xFF66756D),
+                    height: 1.35,
+                  ),
+                ),
+                const SizedBox(height: 22),
+                SizedBox(
+                  width: double.infinity,
+                  height: 56,
+                  child: ElevatedButton(
+                    onPressed: () async {
+                      Navigator.of(sheetContext).pop();
+                      await _premiumService.unlockPremium();
+                      if (!mounted) return;
+
+                      setState(() => _premiumUnlocked = true);
+
+                      if (_shouldAddAfterUnlock) {
+                        _shouldAddAfterUnlock = false;
+                        final updated = await _treeService.addTree();
+                        if (!mounted) return;
+                        setState(() => _collection = updated);
+                      }
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF5C8D7C),
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(28),
+                      ),
+                    ),
+                    child: const Text(
+                      'Unlock more trees',
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  r'$2.99 one-time',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Color(0xFF7B8A83),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(sheetContext).pop();
+                  },
+                  child: const Text(
+                    'Restore',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Color(0xFF5C8D7C),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -127,7 +273,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
-    final tree = _tree;
+    final tree = _collection?.currentTree;
 
     return Scaffold(
       body: SafeArea(
@@ -137,7 +283,14 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
                 child: Column(
                   children: [
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 8),
+                    _TreeSwitcher(
+                      trees: _collection!.trees,
+                      currentIndex: _collection!.currentIndex,
+                      onSelect: _selectTree,
+                      onAdd: _handleAddTree,
+                    ),
+                    const SizedBox(height: 14),
                     Text(
                       'MyTree',
                       style: Theme.of(context).textTheme.headlineMedium?.copyWith(
@@ -341,6 +494,87 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   String _streakLabel(int streak) {
     if (streak == 1) return 'Streak: 1 day';
     return 'Streak: $streak days';
+  }
+}
+
+class _TreeSwitcher extends StatelessWidget {
+  const _TreeSwitcher({
+    required this.trees,
+    required this.currentIndex,
+    required this.onSelect,
+    required this.onAdd,
+  });
+
+  final List<TreeModel> trees;
+  final int currentIndex;
+  final ValueChanged<int> onSelect;
+  final VoidCallback onAdd;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 64,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: trees.length + 1,
+        separatorBuilder: (context, _) => const SizedBox(width: 10),
+        itemBuilder: (context, index) {
+          if (index == trees.length) {
+            return GestureDetector(
+              onTap: onAdd,
+              child: Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE7EFEA),
+                  borderRadius: BorderRadius.circular(26),
+                ),
+                child: const Icon(
+                  Icons.add,
+                  color: Color(0xFF5C8D7C),
+                ),
+              ),
+            );
+          }
+
+          final tree = trees[index];
+          final selected = index == currentIndex;
+
+          return GestureDetector(
+            onTap: () => onSelect(index),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              width: selected ? 56 : 48,
+              height: selected ? 56 : 48,
+              decoration: BoxDecoration(
+                color: selected
+                    ? const Color(0xFFDDEADF)
+                    : const Color(0xFFF0F4F1),
+                borderRadius: BorderRadius.circular(28),
+                boxShadow: selected
+                    ? [
+                        BoxShadow(
+                          color: const Color(0xFF5C8D7C).withValues(
+                            alpha: 0.14,
+                          ),
+                          blurRadius: 12,
+                          offset: const Offset(0, 6),
+                        )
+                      ]
+                    : null,
+              ),
+              child: Center(
+                child: Transform.scale(
+                  // Reuse the same TreeView drawing system, scaled down.
+                  scale: selected ? 0.22 : 0.18,
+                  child: TreeView(tree: tree),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
   }
 }
 

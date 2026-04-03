@@ -2,94 +2,160 @@ import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'tree_collection_model.dart';
 import 'tree_model.dart';
 
 class TreeService {
-  static const _storageKey = 'mytree_state_v1';
+  static const _storageKey = 'mytree_collection_v2';
 
-  /// Loads persisted tree state and recalculates health/dead from "today".
-  /// Also normalizes/repersists the recalc result.
-  Future<TreeModel> loadTree() async {
+  /// Loads persisted tree collection and recalculates health/dead from "today".
+  Future<TreeCollectionModel> loadCollection() async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString(_storageKey);
 
     if (raw == null || raw.isEmpty) {
-      final initial = TreeModel.initial();
-      await saveTree(initial);
+      final initial = TreeCollectionModel.initial();
+      await saveCollection(initial);
       return initial;
     }
 
     try {
       final map = jsonDecode(raw) as Map<String, dynamic>;
-      var tree = TreeModel.fromJson(map);
-      tree = _recalculate(tree);
-      await saveTree(tree);
-      return tree;
+      final collection = TreeCollectionModel.fromJson(map);
+
+      final recalculatedTrees =
+          collection.trees.map(_recalculateTree).toList(growable: false);
+
+      final safeIndex = collection.currentIndex.clamp(
+        0,
+        recalculatedTrees.length - 1,
+      );
+
+      final updated = collection.copyWith(
+        trees: recalculatedTrees,
+        currentIndex: safeIndex,
+      );
+
+      await saveCollection(updated);
+      return updated;
     } catch (_) {
-      final initial = TreeModel.initial();
-      await saveTree(initial);
+      final initial = TreeCollectionModel.initial();
+      await saveCollection(initial);
       return initial;
     }
   }
 
-  Future<void> saveTree(TreeModel tree) async {
+  Future<void> saveCollection(TreeCollectionModel collection) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_storageKey, jsonEncode(tree.toJson()));
+    await prefs.setString(_storageKey, jsonEncode(collection.toJson()));
   }
 
-  /// One water per calendar day.
-  /// No-op if already watered today or if the tree is dead.
-  Future<TreeModel> waterToday() async {
-    var tree = await loadTree();
-    tree = _recalculate(tree);
+  Future<TreeCollectionModel> selectTree(int index) async {
+    final collection = await loadCollection();
+    final safeIndex = index.clamp(0, collection.trees.length - 1);
+    final updated = collection.copyWith(currentIndex: safeIndex);
+    await saveCollection(updated);
+    return updated;
+  }
 
-    if (tree.isDead || tree.healthState == TreeHealthState.dead) {
-      return tree;
+  /// Adds a new tree and selects it.
+  /// UI controls free/premium limits; this method always adds.
+  Future<TreeCollectionModel> addTree() async {
+    final collection = await loadCollection();
+    final updatedTrees = [...collection.trees, TreeModel.initial()];
+    final updated = collection.copyWith(
+      trees: updatedTrees,
+      currentIndex: updatedTrees.length - 1,
+    );
+    await saveCollection(updated);
+    return updated;
+  }
+
+  /// Waters the currently selected tree once per calendar day.
+  Future<TreeCollectionModel> waterCurrentTree() async {
+    final collection = await loadCollection();
+    final current = _recalculateTree(collection.currentTree);
+
+    // Dead trees cannot be watered.
+    if (current.isDead || current.healthState == TreeHealthState.dead) {
+      final updatedCollection = collection.copyWith(
+        trees: _replaceAt(
+          collection.trees,
+          collection.currentIndex,
+          current,
+        ),
+      );
+      await saveCollection(updatedCollection);
+      return updatedCollection;
     }
 
-    if (tree.hasWateredToday) {
-      return tree;
+    // Already watered today.
+    if (current.hasWateredToday) {
+      final updatedCollection = collection.copyWith(
+        trees: _replaceAt(
+          collection.trees,
+          collection.currentIndex,
+          current,
+        ),
+      );
+      await saveCollection(updatedCollection);
+      return updatedCollection;
     }
 
     final today = _dateOnly(DateTime.now());
 
     // Compute next streak:
-    // - If watered yesterday (gap=1): streak + 1
-    // - Otherwise (gap>=2 or no history): streak resets to 1
+    // - gap=1 => streak + 1
+    // - otherwise => streak resets to 1
     int newStreak = 1;
-    if (tree.lastWateredDateIso != null) {
-      final last = _parseLocalDateOnly(tree.lastWateredDateIso!);
+    if (current.lastWateredDateIso != null) {
+      final last = _parseLocalDateOnly(current.lastWateredDateIso!);
       if (last != null) {
         final gap = today.difference(_dateOnly(last)).inDays;
         if (gap == 1) {
-          newStreak = tree.streakDays + 1;
+          newStreak = current.streakDays + 1;
         } else if (gap <= 0) {
-          newStreak = tree.streakDays;
+          newStreak = current.streakDays;
         } else {
           newStreak = 1;
         }
       }
     }
 
-    final updated = tree.copyWith(
+    final updatedTree = current.copyWith(
       lastWateredDateIso: _formatLocalDateOnly(today),
       streakDays: newStreak,
-      totalDaysCared: tree.totalDaysCared + 1,
+      totalDaysCared: current.totalDaysCared + 1,
       isDead: false,
     );
 
-    await saveTree(updated);
-    return updated;
+    final updatedCollection = collection.copyWith(
+      trees: _replaceAt(
+        collection.trees,
+        collection.currentIndex,
+        updatedTree,
+      ),
+    );
+
+    await saveCollection(updatedCollection);
+    return updatedCollection;
   }
 
-  /// After death, user plants a new seed: clears water history and streak.
-  Future<TreeModel> restartTree() async {
-    final fresh = TreeModel.initial();
-    await saveTree(fresh);
-    return fresh;
+  /// After death, user plants a new seed for the current tree.
+  Future<TreeCollectionModel> restartCurrentTree() async {
+    final collection = await loadCollection();
+    final updatedCollection = collection.copyWith(
+      trees: _replaceAt(
+        collection.trees,
+        collection.currentIndex,
+        TreeModel.initial(),
+      ),
+    );
+    await saveCollection(updatedCollection);
+    return updatedCollection;
   }
 
-  TreeModel _recalculate(TreeModel tree) {
+  TreeModel _recalculateTree(TreeModel tree) {
     if (tree.lastWateredDateIso == null) {
       return tree.copyWith(isDead: false);
     }
@@ -111,8 +177,7 @@ class TreeService {
     return '$y-$m-$d';
   }
 
-  /// Parse a local date-only string `yyyy-mm-dd` into a local [DateTime]
-  /// at midnight.
+  /// Parse a local date-only string `yyyy-mm-dd` into a local [DateTime] at midnight.
   static DateTime? _parseLocalDateOnly(String raw) {
     final datePart = raw.length >= 10 ? raw.substring(0, 10) : raw;
     final parts = datePart.split('-');
@@ -124,5 +189,15 @@ class TreeService {
     if (y == null || m == null || d == null) return null;
 
     return DateTime(y, m, d);
+  }
+
+  static List<TreeModel> _replaceAt(
+    List<TreeModel> trees,
+    int index,
+    TreeModel tree,
+  ) {
+    final copy = [...trees];
+    copy[index] = tree;
+    return copy;
   }
 }
