@@ -1,3 +1,4 @@
+import 'life_category.dart';
 import 'tree_model.dart';
 
 /// Stores multiple trees and the currently selected index.
@@ -6,24 +7,18 @@ class TreeCollectionModel {
   final List<TreeModel> trees;
   final int currentIndex;
 
-  const TreeCollectionModel({
-    required this.trees,
-    required this.currentIndex,
-  });
+  const TreeCollectionModel({required this.trees, required this.currentIndex});
 
   factory TreeCollectionModel.initial() {
     return TreeCollectionModel(
-      trees: [TreeModel.initial()],
+      trees: [TreeModel.initial(category: LifeCategory.health)],
       currentIndex: 0,
     );
   }
 
   TreeModel get currentTree => trees[currentIndex];
 
-  TreeCollectionModel copyWith({
-    List<TreeModel>? trees,
-    int? currentIndex,
-  }) {
+  TreeCollectionModel copyWith({List<TreeModel>? trees, int? currentIndex}) {
     return TreeCollectionModel(
       trees: trees ?? this.trees,
       currentIndex: currentIndex ?? this.currentIndex,
@@ -44,9 +39,10 @@ class TreeCollectionModel {
         .toList();
 
     return TreeCollectionModel(
-      trees: trees.isEmpty ? [TreeModel.initial()] : trees,
+      trees: trees.isEmpty
+          ? [TreeModel.initial(category: LifeCategory.health)]
+          : trees,
       currentIndex: (json['currentIndex'] as num?)?.toInt() ?? 0,
     );
   }
 }
-

@@ -1,22 +1,15 @@
 // Data model + derived state rules for the virtual tree (no I/O).
 // Health and growth are derived from persisted dates and streak on each load.
 
-enum TreeHealthState {
-  healthy,
-  thirsty,
-  wilting,
-  dead,
-}
+import 'life_category.dart';
 
-enum TreeGrowthStage {
-  seed,
-  sprout,
-  small,
-  young,
-  mature,
-}
+enum TreeHealthState { healthy, thirsty, wilting, dead }
+
+enum TreeGrowthStage { seed, sprout, small, young, mature }
 
 class TreeModel {
+  final String id;
+  final LifeCategory category;
   final String createdAtIso;
 
   /// Last watered calendar date in local time as `yyyy-mm-dd`.
@@ -33,6 +26,8 @@ class TreeModel {
   final bool isDead;
 
   const TreeModel({
+    required this.id,
+    required this.category,
     required this.createdAtIso,
     required this.lastWateredDateIso,
     required this.streakDays,
@@ -40,9 +35,11 @@ class TreeModel {
     required this.isDead,
   });
 
-  factory TreeModel.initial() {
+  factory TreeModel.initial({required LifeCategory category, String? id}) {
     final today = _dateOnly(DateTime.now());
     return TreeModel(
+      id: id ?? 'tree_${DateTime.now().microsecondsSinceEpoch}',
+      category: category,
       createdAtIso: today.toIso8601String(),
       lastWateredDateIso: null,
       streakDays: 0,
@@ -52,6 +49,8 @@ class TreeModel {
   }
 
   TreeModel copyWith({
+    String? id,
+    LifeCategory? category,
     String? createdAtIso,
     String? lastWateredDateIso,
     int? streakDays,
@@ -59,6 +58,8 @@ class TreeModel {
     bool? isDead,
   }) {
     return TreeModel(
+      id: id ?? this.id,
+      category: category ?? this.category,
       createdAtIso: createdAtIso ?? this.createdAtIso,
       lastWateredDateIso: lastWateredDateIso ?? this.lastWateredDateIso,
       streakDays: streakDays ?? this.streakDays,
@@ -69,6 +70,8 @@ class TreeModel {
 
   Map<String, dynamic> toJson() {
     return {
+      'id': id,
+      'category': category.storageKey,
       'createdAtIso': createdAtIso,
       'lastWateredDateIso': lastWateredDateIso,
       'streakDays': streakDays,
@@ -78,7 +81,12 @@ class TreeModel {
   }
 
   factory TreeModel.fromJson(Map<String, dynamic> json) {
+    final category = LifeCategoryX.fromStorageKey(json['category'] as String?);
     return TreeModel(
+      id:
+          json['id'] as String? ??
+          'tree_${json['createdAtIso'] ?? DateTime.now().microsecondsSinceEpoch}',
+      category: category ?? LifeCategory.health,
       createdAtIso: json['createdAtIso'] as String,
       lastWateredDateIso: json['lastWateredDateIso'] as String?,
       streakDays: (json['streakDays'] as num?)?.toInt() ?? 0,

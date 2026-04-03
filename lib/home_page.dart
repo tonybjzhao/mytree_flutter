@@ -3,6 +3,9 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+
+import 'create_tree_sheet.dart';
+import 'life_category.dart';
 import 'premium_service.dart';
 
 import 'tree_collection_model.dart';
@@ -40,6 +43,12 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
   Timer? _feedbackTimer;
   String? _waterButtonOverride;
+
+  Set<LifeCategory> get _usedCategories =>
+      _collection?.trees.map((tree) => tree.category).toSet() ?? {};
+
+  bool get _allCategoriesUsed =>
+      _usedCategories.length >= LifeCategory.values.length;
 
   @override
   void initState() {
@@ -184,7 +193,35 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     }
 
     _shouldAddAfterUnlock = false;
-    final updated = await _treeService.addTree();
+    _openCreateTreeSheet();
+  }
+
+  void _openCreateTreeSheet() {
+    if (_allCategoriesUsed) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('All available lives are already growing.'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) {
+        return CreateTreeSheet(
+          usedCategories: _usedCategories,
+          onCreate: _createTree,
+        );
+      },
+    );
+  }
+
+  Future<void> _createTree(LifeCategory category) async {
+    final updated = await _treeService.addTree(category);
     if (!mounted) return;
     setState(() => _collection = updated);
   }
@@ -247,9 +284,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                       setState(() => _premiumUnlocked = true);
                       if (_shouldAddAfterUnlock) {
                         _shouldAddAfterUnlock = false;
-                        final updated = await _treeService.addTree();
-                        if (!mounted) return;
-                        setState(() => _collection = updated);
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          if (!mounted) return;
+                          _openCreateTreeSheet();
+                        });
                       }
                     },
                     style: ElevatedButton.styleFrom(
@@ -344,7 +382,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'A little care each day helps life unfold.',
+                      '${tree.category.title} tree ${tree.category.emoji}',
                       textAlign: TextAlign.center,
                       style: Theme.of(
                         context,
@@ -570,17 +608,24 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   String _supportLine(TreeModel tree) {
+    final categoryLine = switch (tree.category) {
+      LifeCategory.health => 'Care for your body and wellbeing.',
+      LifeCategory.family => 'Care for the people closest to you.',
+      LifeCategory.work => 'Care for what you are building.',
+      LifeCategory.rest => 'Care for stillness and recovery.',
+    };
+
     switch (tree.healthState) {
       case TreeHealthState.healthy:
         return tree.hasWateredToday
             ? 'Your care reached it today.'
-            : 'A small return each day keeps it alive.';
+            : categoryLine;
       case TreeHealthState.thirsty:
-        return 'A gentle sip today would help.';
+        return '${tree.category.title} needs a gentle return today.';
       case TreeHealthState.wilting:
-        return 'Come back soon. It can still recover.';
+        return 'Come back soon. ${tree.category.title} can still recover.';
       case TreeHealthState.dead:
-        return 'You can always begin another life.';
+        return 'You can always begin ${tree.category.title.toLowerCase()} again.';
     }
   }
 
@@ -602,7 +647,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           leafTiltRadians: _slotLeafTiltFor(trees[index]),
           stemHeightFactor: _slotStemHeightFor(trees[index]),
           semanticLabel:
-              'Tree slot ${index + 1}, ${_slotStageLabelFor(trees[index])}',
+              '${trees[index].category.title} tree, ${_slotStageLabelFor(trees[index])}',
           onTap: () => _selectTree(index),
         ),
     ];

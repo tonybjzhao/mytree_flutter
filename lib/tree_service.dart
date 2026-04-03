@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'life_category.dart';
 import 'tree_collection_model.dart';
 import 'tree_model.dart';
 
@@ -23,8 +24,9 @@ class TreeService {
       final map = jsonDecode(raw) as Map<String, dynamic>;
       final collection = TreeCollectionModel.fromJson(map);
 
-      final recalculatedTrees =
-          collection.trees.map(_recalculateTree).toList(growable: false);
+      final recalculatedTrees = _normalizeCategories(
+        collection.trees.map(_recalculateTree).toList(growable: false),
+      );
 
       final safeIndex = collection.currentIndex.clamp(
         0,
@@ -58,11 +60,15 @@ class TreeService {
     return updated;
   }
 
-  /// Adds a new tree and selects it.
-  /// UI controls free/premium limits; this method always adds.
-  Future<TreeCollectionModel> addTree() async {
+  Future<TreeCollectionModel> addTree(LifeCategory category) async {
     final collection = await loadCollection();
-    final updatedTrees = [...collection.trees, TreeModel.initial()];
+    if (collection.trees.any((tree) => tree.category == category)) {
+      return collection;
+    }
+    final updatedTrees = [
+      ...collection.trees,
+      TreeModel.initial(category: category),
+    ];
     final updated = collection.copyWith(
       trees: updatedTrees,
       currentIndex: updatedTrees.length - 1,
@@ -79,11 +85,7 @@ class TreeService {
     // Dead trees cannot be watered.
     if (current.isDead || current.healthState == TreeHealthState.dead) {
       final updatedCollection = collection.copyWith(
-        trees: _replaceAt(
-          collection.trees,
-          collection.currentIndex,
-          current,
-        ),
+        trees: _replaceAt(collection.trees, collection.currentIndex, current),
       );
       await saveCollection(updatedCollection);
       return updatedCollection;
@@ -92,11 +94,7 @@ class TreeService {
     // Already watered today.
     if (current.hasWateredToday) {
       final updatedCollection = collection.copyWith(
-        trees: _replaceAt(
-          collection.trees,
-          collection.currentIndex,
-          current,
-        ),
+        trees: _replaceAt(collection.trees, collection.currentIndex, current),
       );
       await saveCollection(updatedCollection);
       return updatedCollection;
@@ -130,11 +128,7 @@ class TreeService {
     );
 
     final updatedCollection = collection.copyWith(
-      trees: _replaceAt(
-        collection.trees,
-        collection.currentIndex,
-        updatedTree,
-      ),
+      trees: _replaceAt(collection.trees, collection.currentIndex, updatedTree),
     );
 
     await saveCollection(updatedCollection);
@@ -144,11 +138,12 @@ class TreeService {
   /// After death, user plants a new seed for the current tree.
   Future<TreeCollectionModel> restartCurrentTree() async {
     final collection = await loadCollection();
+    final current = collection.currentTree;
     final updatedCollection = collection.copyWith(
       trees: _replaceAt(
         collection.trees,
         collection.currentIndex,
-        TreeModel.initial(),
+        TreeModel.initial(category: current.category, id: current.id),
       ),
     );
     await saveCollection(updatedCollection);
@@ -199,5 +194,24 @@ class TreeService {
     final copy = [...trees];
     copy[index] = tree;
     return copy;
+  }
+
+  static List<TreeModel> _normalizeCategories(List<TreeModel> trees) {
+    final assigned = <LifeCategory>{};
+    final result = <TreeModel>[];
+
+    for (final tree in trees) {
+      var category = tree.category;
+      if (assigned.contains(category)) {
+        category = LifeCategory.values.firstWhere(
+          (candidate) => !assigned.contains(candidate),
+          orElse: () => category,
+        );
+      }
+      assigned.add(category);
+      result.add(tree.copyWith(category: category));
+    }
+
+    return result;
   }
 }
