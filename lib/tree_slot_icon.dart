@@ -11,6 +11,8 @@ class TreeSlotData {
     this.selected = false,
     this.locked = false,
     this.tone = TreeSlotTone.healthy,
+    this.leafTiltRadians = 0,
+    this.stemHeightFactor = 1,
     this.semanticLabel,
   });
 
@@ -19,6 +21,8 @@ class TreeSlotData {
   final bool selected;
   final bool locked;
   final TreeSlotTone tone;
+  final double leafTiltRadians;
+  final double stemHeightFactor;
   final String? semanticLabel;
 }
 
@@ -30,11 +34,11 @@ class TreeSlotsRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 64,
+      height: 60,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: slots.length,
-        separatorBuilder: (context, _) => const SizedBox(width: 10),
+        separatorBuilder: (context, _) => const SizedBox(width: 8),
         itemBuilder: (context, index) {
           final slot = slots[index];
           return Semantics(
@@ -55,7 +59,7 @@ class TreeSlotIconButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final size = slot.selected ? 56.0 : 48.0;
+    final size = slot.selected ? 54.0 : 48.0;
     final colors = _colorsFor(slot.tone);
     final backgroundColor = slot.locked
         ? const Color(0xFFF1F3EF)
@@ -95,11 +99,13 @@ class TreeSlotIconButton extends StatelessWidget {
                   size: 18,
                 )
               : CustomPaint(
-                  size: Size.square(slot.selected ? 28 : 24),
+                  size: Size.square(slot.selected ? 30 : 24),
                   painter: _TreeSlotPainter(
                     type: slot.type,
                     colors: colors,
                     subdued: !slot.selected,
+                    leafTiltRadians: slot.leafTiltRadians,
+                    stemHeightFactor: slot.stemHeightFactor,
                   ),
                 ),
         ),
@@ -113,11 +119,15 @@ class _TreeSlotPainter extends CustomPainter {
     required this.type,
     required this.colors,
     required this.subdued,
+    required this.leafTiltRadians,
+    required this.stemHeightFactor,
   });
 
   final TreeSlotType type;
   final _TreeSlotColors colors;
   final bool subdued;
+  final double leafTiltRadians;
+  final double stemHeightFactor;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -153,8 +163,8 @@ class _TreeSlotPainter extends CustomPainter {
         _drawLeaf(
           canvas,
           center: Offset(size.width * 0.55, size.height * 0.4),
-          size: Size(size.width * 0.32, size.height * 0.18),
-          rotation: -0.48,
+          size: Size(size.width * 0.35, size.height * 0.2),
+          rotation: -0.48 + leafTiltRadians,
           paint: leafPaint,
         );
         break;
@@ -163,21 +173,21 @@ class _TreeSlotPainter extends CustomPainter {
           canvas,
           size,
           trunkPaint,
-          heightFactor: 0.32,
+          heightFactor: 0.34,
           widthFactor: 0.14,
         );
         _drawLeaf(
           canvas,
-          center: Offset(size.width * 0.4, size.height * 0.41),
-          size: Size(size.width * 0.3, size.height * 0.18),
-          rotation: -0.78,
+          center: Offset(size.width * 0.38, size.height * 0.41),
+          size: Size(size.width * 0.32, size.height * 0.19),
+          rotation: -0.78 + leafTiltRadians,
           paint: leafPaint,
         );
         _drawLeaf(
           canvas,
-          center: Offset(size.width * 0.61, size.height * 0.39),
-          size: Size(size.width * 0.32, size.height * 0.19),
-          rotation: 0.56,
+          center: Offset(size.width * 0.63, size.height * 0.38),
+          size: Size(size.width * 0.34, size.height * 0.2),
+          rotation: 0.58 + leafTiltRadians * 0.85,
           paint: leafAccentPaint,
         );
         break;
@@ -186,60 +196,65 @@ class _TreeSlotPainter extends CustomPainter {
           canvas,
           size,
           trunkPaint,
-          heightFactor: 0.4,
+          heightFactor: 0.45,
           widthFactor: 0.14,
         );
         _drawLeaf(
           canvas,
-          center: Offset(size.width * 0.39, size.height * 0.38),
-          size: Size(size.width * 0.34, size.height * 0.2),
-          rotation: -0.72,
+          center: Offset(size.width * 0.39, size.height * 0.42),
+          size: Size(size.width * 0.38, size.height * 0.22),
+          rotation: -0.72 + leafTiltRadians,
           paint: leafPaint,
         );
         _drawLeaf(
           canvas,
-          center: Offset(size.width * 0.61, size.height * 0.37),
-          size: Size(size.width * 0.34, size.height * 0.2),
-          rotation: 0.72,
+          center: Offset(size.width * 0.61, size.height * 0.41),
+          size: Size(size.width * 0.38, size.height * 0.22),
+          rotation: 0.72 + leafTiltRadians * 0.85,
           paint: leafAccentPaint,
         );
         _drawLeaf(
           canvas,
-          center: Offset(size.width * 0.5, size.height * 0.28),
-          size: Size(size.width * 0.28, size.height * 0.16),
-          rotation: 0,
+          center: Offset(size.width * 0.5, size.height * 0.27),
+          size: Size(size.width * 0.32, size.height * 0.18),
+          rotation: leafTiltRadians * 0.45,
           paint: leafAccentPaint,
         );
         break;
       case TreeSlotType.youngTree:
         canvas.drawLine(
-          Offset(size.width * 0.5, size.height * 0.78),
-          Offset(size.width * 0.5, size.height * 0.42),
+          Offset(size.width * 0.5, size.height * 0.79),
+          Offset(size.width * 0.5, size.height * 0.45),
           branchPaint,
         );
         canvas.drawLine(
-          Offset(size.width * 0.5, size.height * 0.57),
-          Offset(size.width * 0.37, size.height * 0.49),
+          Offset(size.width * 0.5, size.height * 0.6),
+          Offset(size.width * 0.37, size.height * 0.51),
           branchPaint,
         );
         canvas.drawLine(
-          Offset(size.width * 0.5, size.height * 0.55),
-          Offset(size.width * 0.63, size.height * 0.48),
+          Offset(size.width * 0.5, size.height * 0.58),
+          Offset(size.width * 0.63, size.height * 0.5),
           branchPaint,
         );
         canvas.drawCircle(
-          Offset(size.width * 0.5, size.height * 0.34),
-          size.width * 0.16,
+          Offset(size.width * 0.5, size.height * 0.37),
+          size.width * 0.17,
           leafPaint,
         );
         canvas.drawCircle(
-          Offset(size.width * 0.37, size.height * 0.44),
-          size.width * 0.12,
+          Offset(size.width * 0.36, size.height * 0.46),
+          size.width * 0.13,
           leafAccentPaint,
         );
         canvas.drawCircle(
-          Offset(size.width * 0.63, size.height * 0.44),
-          size.width * 0.12,
+          Offset(size.width * 0.64, size.height * 0.46),
+          size.width * 0.13,
+          leafAccentPaint,
+        );
+        canvas.drawCircle(
+          Offset(size.width * 0.5, size.height * 0.28),
+          size.width * 0.11,
           leafAccentPaint,
         );
         break;
@@ -301,7 +316,7 @@ class _TreeSlotPainter extends CustomPainter {
       Rect.fromCenter(
         center: Offset(size.width * 0.5, size.height * 0.67),
         width: size.width * widthFactor,
-        height: size.height * heightFactor,
+        height: size.height * heightFactor * stemHeightFactor,
       ),
       Radius.circular(size.width * 0.1),
     );
@@ -343,7 +358,9 @@ class _TreeSlotPainter extends CustomPainter {
   bool shouldRepaint(covariant _TreeSlotPainter oldDelegate) {
     return oldDelegate.type != type ||
         oldDelegate.colors != colors ||
-        oldDelegate.subdued != subdued;
+        oldDelegate.subdued != subdued ||
+        oldDelegate.leafTiltRadians != leafTiltRadians ||
+        oldDelegate.stemHeightFactor != stemHeightFactor;
   }
 }
 

@@ -599,6 +599,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           type: _slotTypeFor(trees[index]),
           selected: index == currentIndex,
           tone: _slotToneFor(trees[index]),
+          leafTiltRadians: _slotLeafTiltFor(trees[index]),
+          stemHeightFactor: _slotStemHeightFor(trees[index]),
           semanticLabel:
               'Tree slot ${index + 1}, ${_slotStageLabelFor(trees[index])}',
           onTap: () => _selectTree(index),
@@ -664,6 +666,28 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     if (streak <= 6) return 'two leaves';
     if (streak <= 13) return 'growing plant';
     return 'small canopy tree';
+  }
+
+  double _slotLeafTiltFor(TreeModel tree) {
+    final hash = _slotHash(tree.createdAtIso);
+    final normalized = ((hash >> 3) & 0xff) / 255;
+    final degrees = -8 + (normalized * 16);
+    return degrees * math.pi / 180;
+  }
+
+  double _slotStemHeightFor(TreeModel tree) {
+    final hash = _slotHash(tree.createdAtIso);
+    final normalized = ((hash >> 11) & 0xff) / 255;
+    return 0.84 + (normalized * 0.32);
+  }
+
+  int _slotHash(String seed) {
+    var hash = 2166136261;
+    for (final codeUnit in seed.codeUnits) {
+      hash ^= codeUnit;
+      hash = (hash * 16777619) & 0x7fffffff;
+    }
+    return hash;
   }
 }
 
