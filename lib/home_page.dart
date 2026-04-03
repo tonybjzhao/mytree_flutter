@@ -42,7 +42,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   late final Animation<double> _dropAnimation;
 
   Timer? _feedbackTimer;
+  Timer? _careToastTimer;
   String? _waterButtonOverride;
+  OverlayEntry? _careToastEntry;
 
   Set<LifeCategory> get _usedCategories =>
       _collection?.trees.map((tree) => tree.category).toSet() ?? {};
@@ -166,6 +168,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       _collection = updatedCollection;
       _watering = false;
     });
+    _showCareToast(updatedCollection.currentTree.category);
   }
 
   Future<void> _restart() async {
@@ -333,10 +336,54 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   @override
   void dispose() {
     _feedbackTimer?.cancel();
+    _careToastTimer?.cancel();
+    _removeCareToast();
     _swayController.dispose();
     _pulseController.dispose();
     _dropController.dispose();
     super.dispose();
+  }
+
+  void _showCareToast(LifeCategory category) {
+    _removeCareToast();
+
+    final overlay = Overlay.of(context);
+    if (overlay.mounted == false) return;
+
+    _careToastEntry = OverlayEntry(
+      builder: (context) {
+        return Positioned(
+          left: 24,
+          right: 24,
+          bottom: 108,
+          child: IgnorePointer(
+            child: _CareToast(message: _careMessageFor(category)),
+          ),
+        );
+      },
+    );
+
+    overlay.insert(_careToastEntry!);
+    _careToastTimer?.cancel();
+    _careToastTimer = Timer(const Duration(seconds: 2), _removeCareToast);
+  }
+
+  void _removeCareToast() {
+    _careToastEntry?.remove();
+    _careToastEntry = null;
+  }
+
+  String _careMessageFor(LifeCategory category) {
+    switch (category) {
+      case LifeCategory.health:
+        return 'Take care of your health.';
+      case LifeCategory.family:
+        return 'Stay close to your family.';
+      case LifeCategory.work:
+        return 'Keep building your work.';
+      case LifeCategory.rest:
+        return 'Give yourself some rest.';
+    }
   }
 
   @override
@@ -1258,5 +1305,57 @@ class _TreeVariation {
     final mixed = ((hash >> (channel * 7)) ^ (hash * (channel + 3))) & 0xffff;
     final normalized = mixed / 0xffff;
     return min + (max - min) * normalized;
+  }
+}
+
+class _CareToast extends StatelessWidget {
+  const _CareToast({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: 1),
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+      builder: (context, value, child) {
+        return Opacity(
+          opacity: value,
+          child: Transform.translate(
+            offset: Offset(0, (1 - value) * 10),
+            child: child,
+          ),
+        );
+      },
+      child: Center(
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: const Color(0xFFF6FAF6).withValues(alpha: 0.96),
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: const Color(0xFFD9E4DD)),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF5C8D7C).withValues(alpha: 0.1),
+                blurRadius: 18,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+            child: Text(
+              message,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF45665A),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
