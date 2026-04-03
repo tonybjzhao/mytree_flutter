@@ -675,6 +675,7 @@ class TreeView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = _paletteFor(tree.healthState);
+    final variation = _TreeVariation.fromSeed(tree.createdAtIso);
 
     return SizedBox(
       width: 260,
@@ -704,13 +705,22 @@ class TreeView extends StatelessWidget {
               ),
             ),
           ),
-          Positioned(bottom: 72, child: _buildTreeShape(palette)),
+          Positioned(
+            bottom: 72,
+            child: Transform.scale(
+              scale: variation.scale,
+              child: _buildTreeShape(palette, variation),
+            ),
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildTreeShape(_TreePalette palette) {
+  Widget _buildTreeShape(_TreePalette palette, _TreeVariation variation) {
+    final leafTilt = variation.leafTiltRadians;
+    final stemHeightFactor = variation.stemHeightFactor;
+
     if (tree.healthState == TreeHealthState.dead) {
       return Transform.rotate(
         angle: -0.12,
@@ -722,7 +732,7 @@ class TreeView extends StatelessWidget {
             children: [
               Container(
                 width: 16,
-                height: 98,
+                height: 98 * stemHeightFactor,
                 decoration: BoxDecoration(
                   color: palette.trunk,
                   borderRadius: BorderRadius.circular(10),
@@ -732,7 +742,7 @@ class TreeView extends StatelessWidget {
                 bottom: 70,
                 left: 28,
                 child: Transform.rotate(
-                  angle: -0.9,
+                  angle: -0.9 + leafTilt * 0.6,
                   child: Container(
                     width: 30,
                     height: 8,
@@ -747,7 +757,7 @@ class TreeView extends StatelessWidget {
                 bottom: 82,
                 right: 24,
                 child: Transform.rotate(
-                  angle: 0.8,
+                  angle: 0.8 + leafTilt * 0.6,
                   child: Container(
                     width: 24,
                     height: 7,
@@ -773,7 +783,7 @@ class TreeView extends StatelessWidget {
             children: [
               Container(
                 width: 14,
-                height: 62,
+                height: 62 * stemHeightFactor,
                 decoration: BoxDecoration(
                   color: palette.trunk,
                   borderRadius: BorderRadius.circular(12),
@@ -782,7 +792,7 @@ class TreeView extends StatelessWidget {
               Positioned(
                 top: 8,
                 child: Transform.rotate(
-                  angle: -0.38,
+                  angle: -0.38 + leafTilt,
                   child: Container(
                     width: 34,
                     height: 20,
@@ -806,7 +816,7 @@ class TreeView extends StatelessWidget {
             children: [
               Container(
                 width: 16,
-                height: 74,
+                height: 74 * stemHeightFactor,
                 decoration: BoxDecoration(
                   color: palette.trunk,
                   borderRadius: BorderRadius.circular(12),
@@ -816,7 +826,7 @@ class TreeView extends StatelessWidget {
                 top: 16,
                 left: 10,
                 child: Transform.rotate(
-                  angle: -0.5,
+                  angle: -0.5 + leafTilt,
                   child: Container(
                     width: 34,
                     height: 20,
@@ -831,7 +841,7 @@ class TreeView extends StatelessWidget {
                 top: 10,
                 right: 10,
                 child: Transform.rotate(
-                  angle: 0.55,
+                  angle: 0.55 + leafTilt,
                   child: Container(
                     width: 36,
                     height: 20,
@@ -855,7 +865,7 @@ class TreeView extends StatelessWidget {
             children: [
               Container(
                 width: 20,
-                height: 88,
+                height: 88 * stemHeightFactor,
                 decoration: BoxDecoration(
                   color: palette.trunk,
                   borderRadius: BorderRadius.circular(12),
@@ -863,36 +873,45 @@ class TreeView extends StatelessWidget {
               ),
               Positioned(
                 top: 18,
-                child: Container(
-                  width: 92,
-                  height: 54,
-                  decoration: BoxDecoration(
-                    color: palette.leaf,
-                    borderRadius: BorderRadius.circular(40),
+                child: Transform.rotate(
+                  angle: leafTilt * 0.55,
+                  child: Container(
+                    width: 92,
+                    height: 54,
+                    decoration: BoxDecoration(
+                      color: palette.leaf,
+                      borderRadius: BorderRadius.circular(40),
+                    ),
                   ),
                 ),
               ),
               Positioned(
                 top: 4,
                 left: 20,
-                child: Container(
-                  width: 52,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: palette.leaf.withValues(alpha: 0.94),
-                    borderRadius: BorderRadius.circular(28),
+                child: Transform.rotate(
+                  angle: leafTilt,
+                  child: Container(
+                    width: 52,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: palette.leaf.withValues(alpha: 0.94),
+                      borderRadius: BorderRadius.circular(28),
+                    ),
                   ),
                 ),
               ),
               Positioned(
                 top: 8,
                 right: 16,
-                child: Container(
-                  width: 46,
-                  height: 34,
-                  decoration: BoxDecoration(
-                    color: palette.leaf.withValues(alpha: 0.92),
-                    borderRadius: BorderRadius.circular(24),
+                child: Transform.rotate(
+                  angle: leafTilt * 0.8,
+                  child: Container(
+                    width: 46,
+                    height: 34,
+                    decoration: BoxDecoration(
+                      color: palette.leaf.withValues(alpha: 0.92),
+                      borderRadius: BorderRadius.circular(24),
+                    ),
                   ),
                 ),
               ),
@@ -909,7 +928,7 @@ class TreeView extends StatelessWidget {
             children: [
               Container(
                 width: 28,
-                height: 102,
+                height: 102 * stemHeightFactor,
                 decoration: BoxDecoration(
                   color: palette.trunk,
                   borderRadius: BorderRadius.circular(14),
@@ -917,47 +936,59 @@ class TreeView extends StatelessWidget {
               ),
               Positioned(
                 top: 42,
-                child: Container(
-                  width: 116,
-                  height: 70,
-                  decoration: BoxDecoration(
-                    color: palette.leaf,
-                    borderRadius: BorderRadius.circular(50),
+                child: Transform.rotate(
+                  angle: leafTilt * 0.45,
+                  child: Container(
+                    width: 116,
+                    height: 70,
+                    decoration: BoxDecoration(
+                      color: palette.leaf,
+                      borderRadius: BorderRadius.circular(50),
+                    ),
                   ),
                 ),
               ),
               Positioned(
                 top: 10,
                 left: 26,
-                child: Container(
-                  width: 54,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: palette.leaf.withValues(alpha: 0.92),
-                    borderRadius: BorderRadius.circular(28),
+                child: Transform.rotate(
+                  angle: leafTilt,
+                  child: Container(
+                    width: 54,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: palette.leaf.withValues(alpha: 0.92),
+                      borderRadius: BorderRadius.circular(28),
+                    ),
                   ),
                 ),
               ),
               Positioned(
                 top: 8,
                 right: 22,
-                child: Container(
-                  width: 56,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: palette.leaf.withValues(alpha: 0.92),
-                    borderRadius: BorderRadius.circular(26),
+                child: Transform.rotate(
+                  angle: leafTilt * 0.8,
+                  child: Container(
+                    width: 56,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: palette.leaf.withValues(alpha: 0.92),
+                      borderRadius: BorderRadius.circular(26),
+                    ),
                   ),
                 ),
               ),
               Positioned(
                 top: 0,
-                child: Container(
-                  width: 68,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: palette.leaf.withValues(alpha: 0.95),
-                    borderRadius: BorderRadius.circular(30),
+                child: Transform.rotate(
+                  angle: leafTilt * 0.35,
+                  child: Container(
+                    width: 68,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: palette.leaf.withValues(alpha: 0.95),
+                      borderRadius: BorderRadius.circular(30),
+                    ),
                   ),
                 ),
               ),
@@ -974,7 +1005,7 @@ class TreeView extends StatelessWidget {
             children: [
               Container(
                 width: 34,
-                height: 120,
+                height: 120 * stemHeightFactor,
                 decoration: BoxDecoration(
                   color: palette.trunk,
                   borderRadius: BorderRadius.circular(16),
@@ -982,71 +1013,89 @@ class TreeView extends StatelessWidget {
               ),
               Positioned(
                 top: 54,
-                child: Container(
-                  width: 130,
-                  height: 88,
-                  decoration: BoxDecoration(
-                    color: palette.leaf,
-                    borderRadius: BorderRadius.circular(60),
+                child: Transform.rotate(
+                  angle: leafTilt * 0.4,
+                  child: Container(
+                    width: 130,
+                    height: 88,
+                    decoration: BoxDecoration(
+                      color: palette.leaf,
+                      borderRadius: BorderRadius.circular(60),
+                    ),
                   ),
                 ),
               ),
               Positioned(
                 top: 12,
                 left: 32,
-                child: Container(
-                  width: 58,
-                  height: 52,
-                  decoration: BoxDecoration(
-                    color: palette.leaf.withValues(alpha: 0.94),
-                    borderRadius: BorderRadius.circular(30),
+                child: Transform.rotate(
+                  angle: leafTilt,
+                  child: Container(
+                    width: 58,
+                    height: 52,
+                    decoration: BoxDecoration(
+                      color: palette.leaf.withValues(alpha: 0.94),
+                      borderRadius: BorderRadius.circular(30),
+                    ),
                   ),
                 ),
               ),
               Positioned(
                 top: 10,
                 right: 30,
-                child: Container(
-                  width: 60,
-                  height: 54,
-                  decoration: BoxDecoration(
-                    color: palette.leaf.withValues(alpha: 0.94),
-                    borderRadius: BorderRadius.circular(32),
+                child: Transform.rotate(
+                  angle: leafTilt * 0.8,
+                  child: Container(
+                    width: 60,
+                    height: 54,
+                    decoration: BoxDecoration(
+                      color: palette.leaf.withValues(alpha: 0.94),
+                      borderRadius: BorderRadius.circular(32),
+                    ),
                   ),
                 ),
               ),
               Positioned(
                 top: 34,
                 left: 10,
-                child: Container(
-                  width: 46,
-                  height: 42,
-                  decoration: BoxDecoration(
-                    color: palette.leaf.withValues(alpha: 0.88),
-                    borderRadius: BorderRadius.circular(26),
+                child: Transform.rotate(
+                  angle: leafTilt * 0.55,
+                  child: Container(
+                    width: 46,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: palette.leaf.withValues(alpha: 0.88),
+                      borderRadius: BorderRadius.circular(26),
+                    ),
                   ),
                 ),
               ),
               Positioned(
                 top: 38,
                 right: 8,
-                child: Container(
-                  width: 44,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: palette.leaf.withValues(alpha: 0.88),
-                    borderRadius: BorderRadius.circular(24),
+                child: Transform.rotate(
+                  angle: leafTilt * 0.45,
+                  child: Container(
+                    width: 44,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: palette.leaf.withValues(alpha: 0.88),
+                      borderRadius: BorderRadius.circular(24),
+                    ),
                   ),
                 ),
               ),
               Positioned(
                 top: 0,
-                child: Container(
-                  width: 74,
-                  height: 54,
-                  decoration: BoxDecoration(
-                    color: palette.leaf.withValues(alpha: 0.96),
-                    borderRadius: BorderRadius.circular(32),
+                child: Transform.rotate(
+                  angle: leafTilt * 0.3,
+                  child: Container(
+                    width: 74,
+                    height: 54,
+                    decoration: BoxDecoration(
+                      color: palette.leaf.withValues(alpha: 0.96),
+                      borderRadius: BorderRadius.circular(32),
+                    ),
                   ),
                 ),
               ),
@@ -1102,4 +1151,43 @@ class _TreePalette {
     required this.soil,
     required this.ground,
   });
+}
+
+class _TreeVariation {
+  const _TreeVariation({
+    required this.leafTiltRadians,
+    required this.scale,
+    required this.stemHeightFactor,
+  });
+
+  final double leafTiltRadians;
+  final double scale;
+  final double stemHeightFactor;
+
+  factory _TreeVariation.fromSeed(String seed) {
+    final hash = _stableHash(seed);
+    final leafTiltDegrees = _mapHash(hash, 0, -5, 5);
+    final scale = _mapHash(hash, 1, 0.9, 1.1);
+    final stemHeightFactor = _mapHash(hash, 2, 0.92, 1.08);
+    return _TreeVariation(
+      leafTiltRadians: leafTiltDegrees * math.pi / 180,
+      scale: scale,
+      stemHeightFactor: stemHeightFactor,
+    );
+  }
+
+  static int _stableHash(String value) {
+    var hash = 2166136261;
+    for (final codeUnit in value.codeUnits) {
+      hash ^= codeUnit;
+      hash = (hash * 16777619) & 0x7fffffff;
+    }
+    return hash;
+  }
+
+  static double _mapHash(int hash, int channel, double min, double max) {
+    final mixed = ((hash >> (channel * 7)) ^ (hash * (channel + 3))) & 0xffff;
+    final normalized = mixed / 0xffff;
+    return min + (max - min) * normalized;
+  }
 }
