@@ -17,6 +17,8 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
+  static const int _maxTreeSlots = 3;
+
   final TreeService _treeService = TreeService();
 
   final PremiumService _premiumService = PremiumService();
@@ -30,6 +32,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   late final AnimationController _swayController;
   late final AnimationController _pulseController;
   late final Animation<double> _pulseAnimation;
+  late final Animation<double> _glowScaleAnimation;
+  late final Animation<double> _glowOpacityAnimation;
   late final AnimationController _dropController;
   late final Animation<double> _dropAnimation;
 
@@ -54,16 +58,50 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
     _pulseAnimation = TweenSequence<double>([
       TweenSequenceItem(
-        tween: Tween(begin: 1.0, end: 1.08).chain(
-          CurveTween(curve: Curves.easeOut),
-        ),
+        tween: Tween(
+          begin: 1.0,
+          end: 1.08,
+        ).chain(CurveTween(curve: Curves.easeOut)),
         weight: 50,
       ),
       TweenSequenceItem(
-        tween: Tween(begin: 1.08, end: 1.0).chain(
-          CurveTween(curve: Curves.easeInOut),
-        ),
+        tween: Tween(
+          begin: 1.08,
+          end: 1.0,
+        ).chain(CurveTween(curve: Curves.easeInOut)),
         weight: 50,
+      ),
+    ]).animate(_pulseController);
+    _glowScaleAnimation = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween(
+          begin: 0.7,
+          end: 1.2,
+        ).chain(CurveTween(curve: Curves.easeOutCubic)),
+        weight: 55,
+      ),
+      TweenSequenceItem(
+        tween: Tween(
+          begin: 1.2,
+          end: 1.5,
+        ).chain(CurveTween(curve: Curves.easeOut)),
+        weight: 45,
+      ),
+    ]).animate(_pulseController);
+    _glowOpacityAnimation = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween(
+          begin: 0.0,
+          end: 0.3,
+        ).chain(CurveTween(curve: Curves.easeOut)),
+        weight: 25,
+      ),
+      TweenSequenceItem(
+        tween: Tween(
+          begin: 0.3,
+          end: 0.0,
+        ).chain(CurveTween(curve: Curves.easeIn)),
+        weight: 75,
       ),
     ]).animate(_pulseController);
 
@@ -71,9 +109,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       vsync: this,
       duration: const Duration(milliseconds: 500),
     );
-    _dropAnimation = Tween<double>(begin: -90, end: 20).animate(
-      CurvedAnimation(parent: _dropController, curve: Curves.easeIn),
-    );
+    _dropAnimation = Tween<double>(
+      begin: -90,
+      end: 20,
+    ).animate(CurvedAnimation(parent: _dropController, curve: Curves.easeIn));
 
     _load();
   }
@@ -134,10 +173,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   Future<void> _handleAddTree() async {
     final collection = _collection;
     if (collection == null) return;
+    if (collection.trees.length >= _maxTreeSlots) return;
 
     // Free users can only keep 1 tree.
-    final freeLimitReached =
-        !_premiumUnlocked && collection.trees.isNotEmpty;
+    final freeLimitReached = !_premiumUnlocked && collection.trees.isNotEmpty;
     if (freeLimitReached) {
       _shouldAddAfterUnlock = true;
       _showPaywall();
@@ -173,13 +212,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                   ),
                 ),
                 const SizedBox(height: 20),
-                const Text(
-                  '🌱   🌿   🌳',
-                  style: TextStyle(fontSize: 28),
-                ),
+                const Text('🌱   🌿   🌳', style: TextStyle(fontSize: 28)),
                 const SizedBox(height: 18),
                 const Text(
-                  'Grow more than one life',
+                  'Grow more lives',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 20,
@@ -189,7 +225,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 ),
                 const SizedBox(height: 10),
                 const Text(
-                  'Care for different parts of your life.',
+                  'Each tree holds a part of your life.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 14,
@@ -209,13 +245,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
                       Navigator.of(sheetContext).pop();
                       setState(() => _premiumUnlocked = true);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('You can grow more trees now 🌱'),
-                          duration: Duration(seconds: 2),
-                        ),
-                      );
-
                       if (_shouldAddAfterUnlock) {
                         _shouldAddAfterUnlock = false;
                         final updated = await _treeService.addTree();
@@ -232,7 +261,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                       ),
                     ),
                     child: const Text(
-                      'Unlock more trees',
+                      'Grow more lives 🌱',
                       style: TextStyle(
                         fontSize: 17,
                         fontWeight: FontWeight.w700,
@@ -243,10 +272,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 const SizedBox(height: 8),
                 const Text(
                   r'$2.99 one-time',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Color(0xFF7B8A83),
-                  ),
+                  style: TextStyle(fontSize: 14, color: Color(0xFF7B8A83)),
                 ),
                 const SizedBox(height: 12),
                 TextButton(
@@ -255,10 +281,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                   },
                   child: const Text(
                     'Restore',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Color(0xFF5C8D7C),
-                    ),
+                    style: TextStyle(fontSize: 14, color: Color(0xFF5C8D7C)),
                   ),
                 ),
               ],
@@ -287,31 +310,51 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         child: _loading || tree == null
             ? const Center(child: CircularProgressIndicator())
             : Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 20,
+                ),
                 child: Column(
                   children: [
                     const SizedBox(height: 8),
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'Lives you can grow',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF7B8A83),
+                          letterSpacing: 0.2,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
                     _TreeSwitcher(
                       trees: _collection!.trees,
                       currentIndex: _collection!.currentIndex,
+                      premiumUnlocked: _premiumUnlocked,
+                      maxSlots: _maxTreeSlots,
                       onSelect: _selectTree,
+                      onLockedTap: () {
+                        _shouldAddAfterUnlock = true;
+                        _showPaywall();
+                      },
                       onAdd: _handleAddTree,
                     ),
                     const SizedBox(height: 14),
                     Text(
                       'MyTree',
-                      style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                            fontSize: 34,
-                            fontWeight: FontWeight.w800,
-                          ),
+                      style: Theme.of(context).textTheme.headlineMedium
+                          ?.copyWith(fontSize: 34, fontWeight: FontWeight.w800),
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Water once a day to help it grow.',
+                      'A little care each day helps life unfold.',
                       textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                            fontSize: 17,
-                          ),
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodyLarge?.copyWith(fontSize: 17),
                     ),
                     Expanded(
                       child: Align(
@@ -329,6 +372,29 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                               child: Stack(
                                 alignment: Alignment.center,
                                 children: [
+                                  FadeTransition(
+                                    opacity: _glowOpacityAnimation,
+                                    child: ScaleTransition(
+                                      scale: _glowScaleAnimation,
+                                      child: Container(
+                                        width: 190,
+                                        height: 190,
+                                        decoration: BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          color: const Color(0xFFF0E7A6),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: const Color(
+                                                0xFFF6E9A5,
+                                              ).withValues(alpha: 0.34),
+                                              blurRadius: 36,
+                                              spreadRadius: 6,
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
                                   AnimatedBuilder(
                                     animation: _dropAnimation,
                                     builder: (context, _) {
@@ -425,8 +491,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                         width: double.infinity,
                         height: 62,
                         child: ElevatedButton(
-                          onPressed:
-                              (tree.hasWateredToday || _watering) ? null : _waterToday,
+                          onPressed: (tree.hasWateredToday || _watering)
+                              ? null
+                              : _waterToday,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFF5C8D7C),
                             disabledBackgroundColor: const Color(0xFFB8CAC1),
@@ -473,13 +540,13 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   String _statusTitle(TreeModel tree) {
     switch (tree.healthState) {
       case TreeHealthState.healthy:
-        return 'Doing well 🌿';
+        return tree.hasWateredToday ? 'Held gently today' : 'Quietly growing';
       case TreeHealthState.thirsty:
-        return 'A bit thirsty';
+        return 'A little thirsty';
       case TreeHealthState.wilting:
-        return 'Struggling…';
+        return 'Still waiting for you';
       case TreeHealthState.dead:
-        return 'Your tree waited for you';
+        return 'This life faded in silence';
     }
   }
 
@@ -487,20 +554,20 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     switch (tree.healthState) {
       case TreeHealthState.healthy:
         return tree.hasWateredToday
-            ? 'You cared for it today.'
-            : 'A little care each day.';
+            ? 'Your care reached it today.'
+            : 'A small return each day keeps it alive.';
       case TreeHealthState.thirsty:
-        return 'A small sip today would help.';
+        return 'A gentle sip today would help.';
       case TreeHealthState.wilting:
-        return 'It still has a chance if you return soon.';
+        return 'Come back soon. It can still recover.';
       case TreeHealthState.dead:
-        return 'You can always plant a new one.';
+        return 'You can always begin another life.';
     }
   }
 
   String _streakLabel(int streak) {
-    if (streak == 1) return 'Streak: 1 day';
-    return 'Streak: $streak days';
+    if (streak == 1) return 'Cared for 1 day in a row';
+    return 'Cared for $streak days in a row';
   }
 }
 
@@ -508,37 +575,85 @@ class _TreeSwitcher extends StatelessWidget {
   const _TreeSwitcher({
     required this.trees,
     required this.currentIndex,
+    required this.premiumUnlocked,
+    required this.maxSlots,
     required this.onSelect,
+    required this.onLockedTap,
     required this.onAdd,
   });
 
   final List<TreeModel> trees;
   final int currentIndex;
+  final bool premiumUnlocked;
+  final int maxSlots;
   final ValueChanged<int> onSelect;
+  final VoidCallback onLockedTap;
   final VoidCallback onAdd;
 
   @override
   Widget build(BuildContext context) {
+    final canAdd = trees.length < maxSlots;
+
     return SizedBox(
       height: 58,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
-        itemCount: trees.length + 1,
+        itemCount: maxSlots + 1,
         separatorBuilder: (context, _) => const SizedBox(width: 10),
         itemBuilder: (context, index) {
-          if (index == trees.length) {
+          if (index == maxSlots) {
+            return GestureDetector(
+              onTap: canAdd ? onAdd : null,
+              child: Opacity(
+                opacity: canAdd ? 1 : 0.5,
+                child: Container(
+                  width: 52,
+                  height: 52,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE7EFEA),
+                    borderRadius: BorderRadius.circular(26),
+                  ),
+                  child: const Icon(Icons.add, color: Color(0xFF5C8D7C)),
+                ),
+              ),
+            );
+          }
+
+          if (index >= trees.length) {
+            if (!premiumUnlocked) {
+              return GestureDetector(
+                onTap: onLockedTap,
+                child: Container(
+                  width: 52,
+                  height: 52,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF1F3EF),
+                    borderRadius: BorderRadius.circular(26),
+                    border: Border.all(color: const Color(0xFFDCE3DC)),
+                  ),
+                  child: const Icon(
+                    Icons.lock_rounded,
+                    color: Color(0xFF8E9B94),
+                    size: 20,
+                  ),
+                ),
+              );
+            }
+
             return GestureDetector(
               onTap: onAdd,
               child: Container(
                 width: 52,
                 height: 52,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFE7EFEA),
+                  color: const Color(0xFFF6F8F4),
                   borderRadius: BorderRadius.circular(26),
+                  border: Border.all(color: const Color(0xFFDCE7DF)),
                 ),
                 child: const Icon(
-                  Icons.add,
-                  color: Color(0xFF5C8D7C),
+                  Icons.eco_outlined,
+                  color: Color(0xFF9AB39D),
+                  size: 22,
                 ),
               ),
             );
@@ -561,18 +676,17 @@ class _TreeSwitcher extends StatelessWidget {
                 boxShadow: selected
                     ? [
                         BoxShadow(
-                          color: const Color(0xFF5C8D7C).withValues(
-                            alpha: 0.14,
-                          ),
+                          color: const Color(
+                            0xFF5C8D7C,
+                          ).withValues(alpha: 0.14),
                           blurRadius: 12,
                           offset: const Offset(0, 6),
-                        )
+                        ),
                       ]
                     : null,
               ),
               child: Center(
                 child: Transform.scale(
-                  // Reuse the same TreeView drawing system, scaled down.
                   scale: selected ? 0.22 : 0.18,
                   child: TreeView(tree: tree),
                 ),
@@ -588,10 +702,7 @@ class _TreeSwitcher extends StatelessWidget {
 class TreeView extends StatelessWidget {
   final TreeModel tree;
 
-  const TreeView({
-    super.key,
-    required this.tree,
-  });
+  const TreeView({super.key, required this.tree});
 
   @override
   Widget build(BuildContext context) {
@@ -625,10 +736,7 @@ class TreeView extends StatelessWidget {
               ),
             ),
           ),
-          Positioned(
-            bottom: 72,
-            child: _buildTreeShape(palette),
-          ),
+          Positioned(bottom: 72, child: _buildTreeShape(palette)),
         ],
       ),
     );
@@ -636,22 +744,53 @@ class TreeView extends StatelessWidget {
 
   Widget _buildTreeShape(_TreePalette palette) {
     if (tree.healthState == TreeHealthState.dead) {
-      // Dead state: no leaves, thinner, slightly tilted trunk.
       return Transform.rotate(
         angle: -0.12,
         child: SizedBox(
-          width: 80,
-          height: 130,
-          child: Align(
+          width: 94,
+          height: 142,
+          child: Stack(
             alignment: Alignment.bottomCenter,
-            child: Container(
-              width: 14,
-              height: 90,
-              decoration: BoxDecoration(
-                color: palette.trunk,
-                borderRadius: BorderRadius.circular(10),
+            children: [
+              Container(
+                width: 16,
+                height: 98,
+                decoration: BoxDecoration(
+                  color: palette.trunk,
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
-            ),
+              Positioned(
+                bottom: 70,
+                left: 28,
+                child: Transform.rotate(
+                  angle: -0.9,
+                  child: Container(
+                    width: 30,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      color: palette.trunk,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                ),
+              ),
+              Positioned(
+                bottom: 82,
+                right: 24,
+                child: Transform.rotate(
+                  angle: 0.8,
+                  child: Container(
+                    width: 24,
+                    height: 7,
+                    decoration: BoxDecoration(
+                      color: palette.trunk,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       );
@@ -659,27 +798,30 @@ class TreeView extends StatelessWidget {
     switch (tree.growthStage) {
       case TreeGrowthStage.seed:
         return SizedBox(
-          width: 64,
-          height: 90,
+          width: 76,
+          height: 104,
           child: Stack(
             alignment: Alignment.bottomCenter,
             children: [
               Container(
-                width: 36,
-                height: 56,
+                width: 14,
+                height: 62,
                 decoration: BoxDecoration(
                   color: palette.trunk,
-                  borderRadius: BorderRadius.circular(18),
+                  borderRadius: BorderRadius.circular(12),
                 ),
               ),
               Positioned(
-                top: 0,
-                child: Container(
-                  width: 28,
-                  height: 28,
-                  decoration: BoxDecoration(
-                    color: palette.leaf,
-                    shape: BoxShape.circle,
+                top: 8,
+                child: Transform.rotate(
+                  angle: -0.38,
+                  child: Container(
+                    width: 34,
+                    height: 20,
+                    decoration: BoxDecoration(
+                      color: palette.leaf,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
                   ),
                 ),
               ),
@@ -689,27 +831,27 @@ class TreeView extends StatelessWidget {
 
       case TreeGrowthStage.sprout:
         return SizedBox(
-          width: 84,
-          height: 120,
+          width: 96,
+          height: 126,
           child: Stack(
             alignment: Alignment.bottomCenter,
             children: [
               Container(
-                width: 24,
-                height: 72,
+                width: 16,
+                height: 74,
                 decoration: BoxDecoration(
                   color: palette.trunk,
                   borderRadius: BorderRadius.circular(12),
                 ),
               ),
               Positioned(
-                top: 18,
-                left: 14,
+                top: 16,
+                left: 10,
                 child: Transform.rotate(
                   angle: -0.5,
                   child: Container(
-                    width: 26,
-                    height: 18,
+                    width: 34,
+                    height: 20,
                     decoration: BoxDecoration(
                       color: palette.leaf,
                       borderRadius: BorderRadius.circular(20),
@@ -719,12 +861,12 @@ class TreeView extends StatelessWidget {
               ),
               Positioned(
                 top: 10,
-                right: 14,
+                right: 10,
                 child: Transform.rotate(
                   angle: 0.55,
                   child: Container(
-                    width: 28,
-                    height: 18,
+                    width: 36,
+                    height: 20,
                     decoration: BoxDecoration(
                       color: palette.leaf,
                       borderRadius: BorderRadius.circular(20),
@@ -738,27 +880,51 @@ class TreeView extends StatelessWidget {
 
       case TreeGrowthStage.small:
         return SizedBox(
-          width: 120,
-          height: 150,
+          width: 138,
+          height: 162,
           child: Stack(
             alignment: Alignment.bottomCenter,
             children: [
               Container(
-                width: 26,
-                height: 84,
+                width: 20,
+                height: 88,
                 decoration: BoxDecoration(
                   color: palette.trunk,
                   borderRadius: BorderRadius.circular(12),
                 ),
               ),
               Positioned(
-                top: 8,
+                top: 18,
                 child: Container(
-                  width: 84,
-                  height: 58,
+                  width: 92,
+                  height: 54,
                   decoration: BoxDecoration(
                     color: palette.leaf,
                     borderRadius: BorderRadius.circular(40),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 4,
+                left: 20,
+                child: Container(
+                  width: 52,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: palette.leaf.withValues(alpha: 0.94),
+                    borderRadius: BorderRadius.circular(28),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 8,
+                right: 16,
+                child: Container(
+                  width: 46,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: palette.leaf.withValues(alpha: 0.92),
+                    borderRadius: BorderRadius.circular(24),
                   ),
                 ),
               ),
@@ -768,24 +934,24 @@ class TreeView extends StatelessWidget {
 
       case TreeGrowthStage.young:
         return SizedBox(
-          width: 150,
-          height: 180,
+          width: 162,
+          height: 190,
           child: Stack(
             alignment: Alignment.bottomCenter,
             children: [
               Container(
                 width: 28,
-                height: 96,
+                height: 102,
                 decoration: BoxDecoration(
                   color: palette.trunk,
                   borderRadius: BorderRadius.circular(14),
                 ),
               ),
               Positioned(
-                top: 24,
+                top: 42,
                 child: Container(
-                  width: 110,
-                  height: 72,
+                  width: 116,
+                  height: 70,
                   decoration: BoxDecoration(
                     color: palette.leaf,
                     borderRadius: BorderRadius.circular(50),
@@ -793,11 +959,11 @@ class TreeView extends StatelessWidget {
                 ),
               ),
               Positioned(
-                top: 0,
-                left: 34,
+                top: 10,
+                left: 26,
                 child: Container(
-                  width: 46,
-                  height: 42,
+                  width: 54,
+                  height: 48,
                   decoration: BoxDecoration(
                     color: palette.leaf.withValues(alpha: 0.92),
                     borderRadius: BorderRadius.circular(28),
@@ -805,14 +971,25 @@ class TreeView extends StatelessWidget {
                 ),
               ),
               Positioned(
-                top: 6,
-                right: 30,
+                top: 8,
+                right: 22,
                 child: Container(
-                  width: 42,
-                  height: 36,
+                  width: 56,
+                  height: 48,
                   decoration: BoxDecoration(
                     color: palette.leaf.withValues(alpha: 0.92),
                     borderRadius: BorderRadius.circular(26),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 0,
+                child: Container(
+                  width: 68,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: palette.leaf.withValues(alpha: 0.95),
+                    borderRadius: BorderRadius.circular(30),
                   ),
                 ),
               ),
@@ -822,21 +999,21 @@ class TreeView extends StatelessWidget {
 
       case TreeGrowthStage.mature:
         return SizedBox(
-          width: 180,
-          height: 210,
+          width: 192,
+          height: 220,
           child: Stack(
             alignment: Alignment.bottomCenter,
             children: [
               Container(
                 width: 34,
-                height: 115,
+                height: 120,
                 decoration: BoxDecoration(
                   color: palette.trunk,
                   borderRadius: BorderRadius.circular(16),
                 ),
               ),
               Positioned(
-                top: 40,
+                top: 54,
                 child: Container(
                   width: 130,
                   height: 88,
@@ -847,11 +1024,11 @@ class TreeView extends StatelessWidget {
                 ),
               ),
               Positioned(
-                top: 8,
-                left: 28,
+                top: 12,
+                left: 32,
                 child: Container(
-                  width: 54,
-                  height: 50,
+                  width: 58,
+                  height: 52,
                   decoration: BoxDecoration(
                     color: palette.leaf.withValues(alpha: 0.94),
                     borderRadius: BorderRadius.circular(30),
@@ -859,11 +1036,11 @@ class TreeView extends StatelessWidget {
                 ),
               ),
               Positioned(
-                top: 4,
-                right: 24,
+                top: 10,
+                right: 30,
                 child: Container(
-                  width: 56,
-                  height: 52,
+                  width: 60,
+                  height: 54,
                   decoration: BoxDecoration(
                     color: palette.leaf.withValues(alpha: 0.94),
                     borderRadius: BorderRadius.circular(32),
@@ -871,8 +1048,8 @@ class TreeView extends StatelessWidget {
                 ),
               ),
               Positioned(
-                top: 24,
-                left: 12,
+                top: 34,
+                left: 10,
                 child: Container(
                   width: 46,
                   height: 42,
@@ -883,14 +1060,25 @@ class TreeView extends StatelessWidget {
                 ),
               ),
               Positioned(
-                top: 30,
-                right: 10,
+                top: 38,
+                right: 8,
                 child: Container(
                   width: 44,
                   height: 40,
                   decoration: BoxDecoration(
                     color: palette.leaf.withValues(alpha: 0.88),
                     borderRadius: BorderRadius.circular(24),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 0,
+                child: Container(
+                  width: 74,
+                  height: 54,
+                  decoration: BoxDecoration(
+                    color: palette.leaf.withValues(alpha: 0.96),
+                    borderRadius: BorderRadius.circular(32),
                   ),
                 ),
               ),

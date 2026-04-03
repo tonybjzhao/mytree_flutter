@@ -6,7 +6,9 @@ import 'package:mytree/main.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('MyTree shows title and water button', (WidgetTester tester) async {
+  testWidgets('MyTree shows title and water button', (
+    WidgetTester tester,
+  ) async {
     SharedPreferences.setMockInitialValues({});
 
     await tester.pumpWidget(const MyTreeApp());
@@ -15,11 +17,12 @@ void main() {
     // would time out. Instead, pump a few frames for the async load to finish.
     for (var i = 0; i < 10; i++) {
       await tester.pump(const Duration(milliseconds: 100));
-      if (find.text('Doing well 🌿').evaluate().isNotEmpty) break;
+      if (find.text('Quietly growing').evaluate().isNotEmpty) break;
     }
 
     expect(find.text('MyTree'), findsOneWidget);
+    expect(find.text('Lives you can grow'), findsOneWidget);
     expect(find.text('Water today'), findsOneWidget);
-    expect(find.text('Doing well 🌿'), findsOneWidget);
+    expect(find.text('Quietly growing'), findsOneWidget);
   });
 }
