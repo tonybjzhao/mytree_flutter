@@ -599,7 +599,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           type: _slotTypeFor(trees[index]),
           selected: index == currentIndex,
           tone: _slotToneFor(trees[index]),
-          semanticLabel: 'Tree slot ${index + 1}',
+          semanticLabel:
+              'Tree slot ${index + 1}, ${_slotStageLabelFor(trees[index])}',
           onTap: () => _selectTree(index),
         ),
     ];
@@ -633,16 +634,15 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
   TreeSlotType _slotTypeFor(TreeModel tree) {
     if (tree.healthState == TreeHealthState.dead) {
-      return TreeSlotType.matureTree;
+      return TreeSlotType.youngTree;
     }
 
-    return switch (tree.growthStage) {
-      TreeGrowthStage.seed => TreeSlotType.seed,
-      TreeGrowthStage.sprout => TreeSlotType.sprout,
-      TreeGrowthStage.small => TreeSlotType.twinLeaf,
-      TreeGrowthStage.young => TreeSlotType.youngTree,
-      TreeGrowthStage.mature => TreeSlotType.matureTree,
-    };
+    final streak = tree.streakDays;
+    if (streak <= 2) return TreeSlotType.seed;
+    if (streak <= 6) return TreeSlotType.sprout;
+    if (streak <= 13) return TreeSlotType.twinLeaf;
+    if (streak <= 29) return TreeSlotType.youngTree;
+    return TreeSlotType.matureTree;
   }
 
   TreeSlotTone _slotToneFor(TreeModel tree) {
@@ -652,6 +652,18 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       TreeHealthState.wilting => TreeSlotTone.wilting,
       TreeHealthState.dead => TreeSlotTone.resting,
     };
+  }
+
+  String _slotStageLabelFor(TreeModel tree) {
+    if (tree.healthState == TreeHealthState.dead) {
+      return 'resting tree';
+    }
+
+    final streak = tree.streakDays;
+    if (streak <= 2) return 'single leaf';
+    if (streak <= 6) return 'two leaves';
+    if (streak <= 13) return 'growing plant';
+    return 'small canopy tree';
   }
 }
 

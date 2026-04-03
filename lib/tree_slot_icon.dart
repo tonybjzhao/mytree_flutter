@@ -147,14 +147,14 @@ class _TreeSlotPainter extends CustomPainter {
           canvas,
           size,
           trunkPaint,
-          heightFactor: 0.3,
-          widthFactor: 0.14,
+          heightFactor: 0.26,
+          widthFactor: 0.12,
         );
         _drawLeaf(
           canvas,
-          center: Offset(size.width * 0.53, size.height * 0.35),
-          size: Size(size.width * 0.42, size.height * 0.24),
-          rotation: -0.45,
+          center: Offset(size.width * 0.55, size.height * 0.4),
+          size: Size(size.width * 0.32, size.height * 0.18),
+          rotation: -0.48,
           paint: leafPaint,
         );
         break;
@@ -163,21 +163,21 @@ class _TreeSlotPainter extends CustomPainter {
           canvas,
           size,
           trunkPaint,
-          heightFactor: 0.38,
+          heightFactor: 0.32,
           widthFactor: 0.14,
         );
         _drawLeaf(
           canvas,
-          center: Offset(size.width * 0.36, size.height * 0.38),
-          size: Size(size.width * 0.34, size.height * 0.2),
-          rotation: -0.75,
+          center: Offset(size.width * 0.4, size.height * 0.41),
+          size: Size(size.width * 0.3, size.height * 0.18),
+          rotation: -0.78,
           paint: leafPaint,
         );
         _drawLeaf(
           canvas,
-          center: Offset(size.width * 0.63, size.height * 0.33),
-          size: Size(size.width * 0.36, size.height * 0.22),
-          rotation: 0.52,
+          center: Offset(size.width * 0.61, size.height * 0.39),
+          size: Size(size.width * 0.32, size.height * 0.19),
+          rotation: 0.56,
           paint: leafAccentPaint,
         );
         break;
@@ -187,52 +187,59 @@ class _TreeSlotPainter extends CustomPainter {
           size,
           trunkPaint,
           heightFactor: 0.4,
-          widthFactor: 0.15,
+          widthFactor: 0.14,
         );
         _drawLeaf(
           canvas,
-          center: Offset(size.width * 0.36, size.height * 0.38),
-          size: Size(size.width * 0.42, size.height * 0.23),
-          rotation: -0.65,
+          center: Offset(size.width * 0.39, size.height * 0.38),
+          size: Size(size.width * 0.34, size.height * 0.2),
+          rotation: -0.72,
           paint: leafPaint,
         );
         _drawLeaf(
           canvas,
-          center: Offset(size.width * 0.64, size.height * 0.38),
-          size: Size(size.width * 0.42, size.height * 0.23),
-          rotation: 0.65,
+          center: Offset(size.width * 0.61, size.height * 0.37),
+          size: Size(size.width * 0.34, size.height * 0.2),
+          rotation: 0.72,
+          paint: leafAccentPaint,
+        );
+        _drawLeaf(
+          canvas,
+          center: Offset(size.width * 0.5, size.height * 0.28),
+          size: Size(size.width * 0.28, size.height * 0.16),
+          rotation: 0,
           paint: leafAccentPaint,
         );
         break;
       case TreeSlotType.youngTree:
         canvas.drawLine(
           Offset(size.width * 0.5, size.height * 0.78),
-          Offset(size.width * 0.5, size.height * 0.38),
+          Offset(size.width * 0.5, size.height * 0.42),
           branchPaint,
         );
         canvas.drawLine(
-          Offset(size.width * 0.5, size.height * 0.54),
-          Offset(size.width * 0.35, size.height * 0.46),
+          Offset(size.width * 0.5, size.height * 0.57),
+          Offset(size.width * 0.37, size.height * 0.49),
           branchPaint,
         );
         canvas.drawLine(
-          Offset(size.width * 0.5, size.height * 0.5),
-          Offset(size.width * 0.64, size.height * 0.42),
+          Offset(size.width * 0.5, size.height * 0.55),
+          Offset(size.width * 0.63, size.height * 0.48),
           branchPaint,
         );
         canvas.drawCircle(
-          Offset(size.width * 0.5, size.height * 0.36),
-          size.width * 0.2,
+          Offset(size.width * 0.5, size.height * 0.34),
+          size.width * 0.16,
           leafPaint,
         );
         canvas.drawCircle(
-          Offset(size.width * 0.36, size.height * 0.47),
-          size.width * 0.14,
+          Offset(size.width * 0.37, size.height * 0.44),
+          size.width * 0.12,
           leafAccentPaint,
         );
         canvas.drawCircle(
-          Offset(size.width * 0.64, size.height * 0.46),
-          size.width * 0.14,
+          Offset(size.width * 0.63, size.height * 0.44),
+          size.width * 0.12,
           leafAccentPaint,
         );
         break;
