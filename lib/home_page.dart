@@ -203,11 +203,18 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                   height: 56,
                   child: ElevatedButton(
                     onPressed: () async {
-                      Navigator.of(sheetContext).pop();
                       await _premiumService.unlockPremium();
                       if (!mounted) return;
+                      if (!sheetContext.mounted) return;
 
+                      Navigator.of(sheetContext).pop();
                       setState(() => _premiumUnlocked = true);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('You can grow more trees now 🌱'),
+                          duration: Duration(seconds: 2),
+                        ),
+                      );
 
                       if (_shouldAddAfterUnlock) {
                         _shouldAddAfterUnlock = false;
@@ -513,7 +520,7 @@ class _TreeSwitcher extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 64,
+      height: 58,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: trees.length + 1,
