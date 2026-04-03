@@ -1,7 +1,8 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-
+import 'package:flutter/services.dart';
 import 'tree_model.dart';
 import 'tree_service.dart';
 
@@ -22,6 +23,11 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   late final AnimationController _swayController;
   late final AnimationController _pulseController;
   late final Animation<double> _pulseAnimation;
+  late final AnimationController _dropController;
+  late final Animation<double> _dropAnimation;
+
+  Timer? _feedbackTimer;
+  String? _waterButtonOverride;
 
   @override
   void initState() {
@@ -54,6 +60,14 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       ),
     ]).animate(_pulseController);
 
+    _dropController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 500),
+    );
+    _dropAnimation = Tween<double>(begin: -90, end: 20).animate(
+      CurvedAnimation(parent: _dropController, curve: Curves.easeIn),
+    );
+
     _load();
   }
 
@@ -74,8 +88,20 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
     setState(() => _watering = true);
 
+    HapticFeedback.lightImpact();
+    setState(() => _waterButtonOverride = 'It feels better now');
+
+    // Overlap effects: drop starts, tree pulse reacts before drop finishes.
+    _dropController.forward(from: 0);
+    _pulseController.forward(from: 0);
+
+    _feedbackTimer?.cancel();
+    _feedbackTimer = Timer(const Duration(seconds: 1), () {
+      if (!mounted) return;
+      setState(() => _waterButtonOverride = null);
+    });
+
     final updated = await _treeService.waterToday();
-    await _pulseController.forward(from: 0);
 
     if (!mounted) return;
     setState(() {
@@ -92,8 +118,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    _feedbackTimer?.cancel();
     _swayController.dispose();
     _pulseController.dispose();
+    _dropController.dispose();
     super.dispose();
   }
 
@@ -126,25 +154,63 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                           ),
                     ),
                     Expanded(
-                      child: Center(
+                      child: Align(
+                        alignment: const Alignment(0, -0.15),
                         child: AnimatedBuilder(
                           animation: Listenable.merge([
                             _swayController,
                             _pulseAnimation,
+                            _dropAnimation,
                           ]),
                           builder: (context, _) {
-                            return Transform.scale(
-                              scale: _pulseAnimation.value,
-                              child: Transform.rotate(
-                                angle: _treeSwayAngle(tree),
-                                child: TreeView(tree: tree),
+                            return SizedBox(
+                              width: 320,
+                              height: 320,
+                              child: Stack(
+                                alignment: Alignment.center,
+                                children: [
+                                  AnimatedBuilder(
+                                    animation: _dropAnimation,
+                                    builder: (context, _) {
+                                      if (_dropController.isDismissed) {
+                                        return const SizedBox.shrink();
+                                      }
+                                      return Positioned(
+                                        top: _dropAnimation.value,
+                                        child: Opacity(
+                                          opacity: (1 - _dropController.value)
+                                              .clamp(0.0, 1.0),
+                                          child: Transform.rotate(
+                                            angle: 0.2,
+                                            child: Container(
+                                              width: 14,
+                                              height: 20,
+                                              decoration: BoxDecoration(
+                                                color: const Color(0xFF7EC8E3),
+                                                borderRadius:
+                                                    BorderRadius.circular(12),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                  Transform.scale(
+                                    scale: 1.4 * _pulseAnimation.value,
+                                    child: Transform.rotate(
+                                      angle: _treeSwayAngle(tree),
+                                      child: TreeView(tree: tree),
+                                    ),
+                                  ),
+                                ],
                               ),
                             );
                           },
                         ),
                       ),
                     ),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 12),
                     Text(
                       _statusTitle(tree),
                       style: const TextStyle(
@@ -153,7 +219,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                         color: Color(0xFF2E5449),
                       ),
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 6),
                     Text(
                       _streakLabel(tree.streakDays),
                       style: const TextStyle(
@@ -161,7 +227,16 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                         color: Color(0xFF66756D),
                       ),
                     ),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 6),
+                    Text(
+                      _supportLine(tree),
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: Color(0xFF7B8A83),
+                      ),
+                    ),
+                    const SizedBox(height: 18),
                     if (tree.healthState == TreeHealthState.dead)
                       SizedBox(
                         width: double.infinity,
@@ -190,7 +265,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                         width: double.infinity,
                         height: 62,
                         child: ElevatedButton(
-                          onPressed: tree.hasWateredToday ? null : _waterToday,
+                          onPressed:
+                              (tree.hasWateredToday || _watering) ? null : _waterToday,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFF5C8D7C),
                             disabledBackgroundColor: const Color(0xFFB8CAC1),
@@ -202,7 +278,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                             ),
                           ),
                           child: Text(
-                            tree.hasWateredToday ? 'Watered today' : 'Water today',
+                            _waterButtonOverride ??
+                                (tree.hasWateredToday
+                                    ? 'Watered today'
+                                    : 'Water today'),
                             style: const TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.w700,
@@ -232,16 +311,30 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   String _statusTitle(TreeModel tree) {
-    // Exact copy requested by the product spec.
     switch (tree.healthState) {
       case TreeHealthState.healthy:
-        return 'Healthy';
+        return 'Doing well 🌿';
       case TreeHealthState.thirsty:
-        return 'Needs water';
+        return 'A bit thirsty';
       case TreeHealthState.wilting:
-        return 'Wilting';
+        return 'Struggling…';
       case TreeHealthState.dead:
-        return 'Dead';
+        return 'Your tree waited for you';
+    }
+  }
+
+  String _supportLine(TreeModel tree) {
+    switch (tree.healthState) {
+      case TreeHealthState.healthy:
+        return tree.hasWateredToday
+            ? 'You cared for it today.'
+            : 'A little care each day.';
+      case TreeHealthState.thirsty:
+        return 'A small sip today would help.';
+      case TreeHealthState.wilting:
+        return 'It still has a chance if you return soon.';
+      case TreeHealthState.dead:
+        return 'You can always plant a new one.';
     }
   }
 
@@ -301,6 +394,27 @@ class TreeView extends StatelessWidget {
   }
 
   Widget _buildTreeShape(_TreePalette palette) {
+    if (tree.healthState == TreeHealthState.dead) {
+      // Dead state: no leaves, thinner, slightly tilted trunk.
+      return Transform.rotate(
+        angle: -0.12,
+        child: SizedBox(
+          width: 80,
+          height: 130,
+          child: Align(
+            alignment: Alignment.bottomCenter,
+            child: Container(
+              width: 14,
+              height: 90,
+              decoration: BoxDecoration(
+                color: palette.trunk,
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
     switch (tree.growthStage) {
       case TreeGrowthStage.seed:
         return SizedBox(

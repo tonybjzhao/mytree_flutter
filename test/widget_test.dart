@@ -15,11 +15,11 @@ void main() {
     // would time out. Instead, pump a few frames for the async load to finish.
     for (var i = 0; i < 10; i++) {
       await tester.pump(const Duration(milliseconds: 100));
-      if (find.text('Healthy').evaluate().isNotEmpty) break;
+      if (find.text('Doing well 🌿').evaluate().isNotEmpty) break;
     }
 
     expect(find.text('MyTree'), findsOneWidget);
     expect(find.text('Water today'), findsOneWidget);
-    expect(find.text('Healthy'), findsOneWidget);
+    expect(find.text('Doing well 🌿'), findsOneWidget);
   });
 }
