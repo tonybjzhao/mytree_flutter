@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'premium_service.dart';
 
 import 'tree_collection_model.dart';
+import 'tree_slot_icon.dart';
 import 'tree_model.dart';
 import 'tree_service.dart';
 
@@ -329,17 +330,11 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                       ),
                     ),
                     const SizedBox(height: 10),
-                    _TreeSwitcher(
-                      trees: _collection!.trees,
-                      currentIndex: _collection!.currentIndex,
-                      premiumUnlocked: _premiumUnlocked,
-                      lockedSlotCount: _freeLockedSlots,
-                      onSelect: _selectTree,
-                      onLockedTap: () {
-                        _shouldAddAfterUnlock = true;
-                        _showPaywall();
-                      },
-                      onAdd: _handleAddTree,
+                    TreeSlotsRow(
+                      slots: _buildTreeSlots(
+                        trees: _collection!.trees,
+                        currentIndex: _collection!.currentIndex,
+                      ),
                     ),
                     const SizedBox(height: 14),
                     Text(
@@ -593,140 +588,69 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     if (streak == 1) return 'Cared for 1 day in a row';
     return 'Cared for $streak days in a row';
   }
-}
 
-class _TreeSwitcher extends StatelessWidget {
-  const _TreeSwitcher({
-    required this.trees,
-    required this.currentIndex,
-    required this.premiumUnlocked,
-    required this.lockedSlotCount,
-    required this.onSelect,
-    required this.onLockedTap,
-    required this.onAdd,
-  });
+  List<TreeSlotData> _buildTreeSlots({
+    required List<TreeModel> trees,
+    required int currentIndex,
+  }) {
+    final slots = <TreeSlotData>[
+      for (var index = 0; index < trees.length; index++)
+        TreeSlotData(
+          type: _slotTypeFor(trees[index]),
+          selected: index == currentIndex,
+          tone: _slotToneFor(trees[index]),
+          semanticLabel: 'Tree slot ${index + 1}',
+          onTap: () => _selectTree(index),
+        ),
+    ];
 
-  final List<TreeModel> trees;
-  final int currentIndex;
-  final bool premiumUnlocked;
-  final int lockedSlotCount;
-  final ValueChanged<int> onSelect;
-  final VoidCallback onLockedTap;
-  final VoidCallback onAdd;
+    if (!_premiumUnlocked) {
+      for (var index = 0; index < _freeLockedSlots; index++) {
+        slots.add(
+          TreeSlotData(
+            type: TreeSlotType.seed,
+            locked: true,
+            semanticLabel: 'Locked tree slot',
+            onTap: () {
+              _shouldAddAfterUnlock = true;
+              _showPaywall();
+            },
+          ),
+        );
+      }
+    }
 
-  @override
-  Widget build(BuildContext context) {
-    final itemCount = premiumUnlocked
-        ? trees.length + 1
-        : trees.length + lockedSlotCount + 1;
-
-    return SizedBox(
-      height: 58,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: itemCount,
-        separatorBuilder: (context, _) => const SizedBox(width: 10),
-        itemBuilder: (context, index) {
-          if (index == itemCount - 1) {
-            return GestureDetector(
-              onTap: onAdd,
-              child: Container(
-                width: 52,
-                height: 52,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE7EFEA),
-                  borderRadius: BorderRadius.circular(26),
-                ),
-                child: const Icon(Icons.add, color: Color(0xFF5C8D7C)),
-              ),
-            );
-          }
-
-          if (index >= trees.length) {
-            if (!premiumUnlocked) {
-              return GestureDetector(
-                onTap: onLockedTap,
-                child: Container(
-                  width: 52,
-                  height: 52,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF1F3EF),
-                    borderRadius: BorderRadius.circular(26),
-                    border: Border.all(color: const Color(0xFFDCE3DC)),
-                  ),
-                  child: const Icon(
-                    Icons.lock_rounded,
-                    color: Color(0xFF8E9B94),
-                    size: 20,
-                  ),
-                ),
-              );
-            }
-
-            return GestureDetector(
-              onTap: onAdd,
-              child: Container(
-                width: 52,
-                height: 52,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF6F8F4),
-                  borderRadius: BorderRadius.circular(26),
-                  border: Border.all(color: const Color(0xFFDCE7DF)),
-                ),
-                child: const Icon(
-                  Icons.eco_outlined,
-                  color: Color(0xFF9AB39D),
-                  size: 22,
-                ),
-              ),
-            );
-          }
-
-          final tree = trees[index];
-          final selected = index == currentIndex;
-
-          return GestureDetector(
-            onTap: () => onSelect(index),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 180),
-              width: selected ? 56 : 48,
-              height: selected ? 56 : 48,
-              decoration: BoxDecoration(
-                color: selected
-                    ? const Color(0xFFDDEADF)
-                    : const Color(0xFFF0F4F1),
-                borderRadius: BorderRadius.circular(28),
-                boxShadow: selected
-                    ? [
-                        BoxShadow(
-                          color: const Color(
-                            0xFF5C8D7C,
-                          ).withValues(alpha: 0.14),
-                          blurRadius: 12,
-                          offset: const Offset(0, 6),
-                        ),
-                      ]
-                    : null,
-              ),
-              child: Center(
-                child: Text(
-                  _slotEmoji(tree),
-                  style: TextStyle(fontSize: selected ? 24 : 20),
-                ),
-              ),
-            ),
-          );
-        },
+    slots.add(
+      TreeSlotData(
+        type: TreeSlotType.add,
+        semanticLabel: 'Add a new tree',
+        onTap: _handleAddTree,
       ),
     );
+
+    return slots;
   }
 
-  String _slotEmoji(TreeModel tree) {
-    if (tree.healthState == TreeHealthState.dead) return '☠️';
+  TreeSlotType _slotTypeFor(TreeModel tree) {
+    if (tree.healthState == TreeHealthState.dead) {
+      return TreeSlotType.matureTree;
+    }
+
     return switch (tree.growthStage) {
-      TreeGrowthStage.seed => '🌱',
-      TreeGrowthStage.sprout || TreeGrowthStage.small => '🌿',
-      TreeGrowthStage.young || TreeGrowthStage.mature => '🌳',
+      TreeGrowthStage.seed => TreeSlotType.seed,
+      TreeGrowthStage.sprout => TreeSlotType.sprout,
+      TreeGrowthStage.small => TreeSlotType.twinLeaf,
+      TreeGrowthStage.young => TreeSlotType.youngTree,
+      TreeGrowthStage.mature => TreeSlotType.matureTree,
+    };
+  }
+
+  TreeSlotTone _slotToneFor(TreeModel tree) {
+    return switch (tree.healthState) {
+      TreeHealthState.healthy => TreeSlotTone.healthy,
+      TreeHealthState.thirsty => TreeSlotTone.thirsty,
+      TreeHealthState.wilting => TreeSlotTone.wilting,
+      TreeHealthState.dead => TreeSlotTone.resting,
     };
   }
 }
