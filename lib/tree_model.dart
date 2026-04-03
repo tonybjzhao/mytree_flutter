@@ -1,113 +1,146 @@
-// Pure data model and rules for the virtual tree (no I/O).
+// Data model + derived state rules for the virtual tree (no I/O).
 // Health and growth are derived from persisted dates and streak on each load.
 
-/// User-facing vitality derived from how many calendar days since last water.
-enum TreeHealth {
-  /// Last watered today, or brand-new seed not yet thirsty.
+enum TreeHealthState {
   healthy,
-
-  /// 1–2 calendar days without water (includes “due today” after yesterday).
   thirsty,
-
-  /// 3–6 days without water — yellow / struggling.
   wilting,
-
-  /// 7+ days without water.
   dead,
 }
 
-/// Visual size of the tree from consecutive daily watering streak.
-enum GrowthStage {
-  seed, // 0–2
-  sprout, // 3–6
-  smallTree, // 7–13
-  youngTree, // 14–29
-  matureTree, // 30+
+enum TreeGrowthStage {
+  seed,
+  sprout,
+  small,
+  young,
+  mature,
 }
 
-/// Immutable snapshot used by the UI after recalculation from storage + “today”.
-class TreeState {
-  const TreeState({
-    required this.health,
-    required this.growthStage,
-    required this.streak,
-    required this.wateredToday,
-    required this.lastWateredDate,
+class TreeModel {
+  final String createdAtIso;
+
+  /// Last watered calendar date in local time as `yyyy-mm-dd`.
+  /// Null means the user never watered yet (fresh seed).
+  final String? lastWateredDateIso;
+
+  /// Current growth streak in days since the last watering reset.
+  final int streakDays;
+
+  /// Total number of watering actions ever (not used for rules, only stats).
+  final int totalDaysCared;
+
+  /// Stored dead flag (redundant with missedDays >= 7, but keeps UI stable).
+  final bool isDead;
+
+  const TreeModel({
+    required this.createdAtIso,
+    required this.lastWateredDateIso,
+    required this.streakDays,
+    required this.totalDaysCared,
+    required this.isDead,
   });
 
-  final TreeHealth health;
-  final GrowthStage growthStage;
-  final int streak;
-
-  /// True if the user already used their once-per-calendar-day water action.
-  final bool wateredToday;
-
-  /// Last calendar day watered, or null if never watered (e.g. after restart).
-  final DateTime? lastWateredDate;
-
-  bool get isDead => health == TreeHealth.dead;
-
-  /// Short label for the status line (matches product copy).
-  String get statusLabel {
-    switch (health) {
-      case TreeHealth.healthy:
-        return 'Healthy';
-      case TreeHealth.thirsty:
-        return 'Needs water';
-      case TreeHealth.wilting:
-        return 'Wilting';
-      case TreeHealth.dead:
-        return 'Dead';
-    }
+  factory TreeModel.initial() {
+    final today = _dateOnly(DateTime.now());
+    return TreeModel(
+      createdAtIso: today.toIso8601String(),
+      lastWateredDateIso: null,
+      streakDays: 0,
+      totalDaysCared: 0,
+      isDead: false,
+    );
   }
 
-  /// Human-readable growth label for optional UI / debugging.
-  String get growthLabel {
-    switch (growthStage) {
-      case GrowthStage.seed:
-        return 'Seed';
-      case GrowthStage.sprout:
-        return 'Sprout';
-      case GrowthStage.smallTree:
-        return 'Small tree';
-      case GrowthStage.youngTree:
-        return 'Young tree';
-      case GrowthStage.matureTree:
-        return 'Mature tree';
-    }
+  TreeModel copyWith({
+    String? createdAtIso,
+    String? lastWateredDateIso,
+    int? streakDays,
+    int? totalDaysCared,
+    bool? isDead,
+  }) {
+    return TreeModel(
+      createdAtIso: createdAtIso ?? this.createdAtIso,
+      lastWateredDateIso: lastWateredDateIso ?? this.lastWateredDateIso,
+      streakDays: streakDays ?? this.streakDays,
+      totalDaysCared: totalDaysCared ?? this.totalDaysCared,
+      isDead: isDead ?? this.isDead,
+    );
   }
-}
 
-/// Maps “calendar days from last water to today” into [TreeHealth].
-///
-/// [daysSinceLastWater] is 0 when last watered today, 1 when last watered
-/// yesterday, etc. When [hasNeverWatered] is true, we treat the tree as
-/// needing its first water (not dead).
-TreeHealth healthForDaysSince({
-  required int daysSinceLastWater,
-  required bool hasNeverWatered,
-}) {
-  // No water history yet: no full days missed → healthy seed waiting for first care.
-  if (hasNeverWatered) {
-    return TreeHealth.healthy;
+  Map<String, dynamic> toJson() {
+    return {
+      'createdAtIso': createdAtIso,
+      'lastWateredDateIso': lastWateredDateIso,
+      'streakDays': streakDays,
+      'totalDaysCared': totalDaysCared,
+      'isDead': isDead,
+    };
   }
-  if (daysSinceLastWater <= 0) {
-    return TreeHealth.healthy;
-  }
-  if (daysSinceLastWater <= 2) {
-    return TreeHealth.thirsty;
-  }
-  if (daysSinceLastWater <= 6) {
-    return TreeHealth.wilting;
-  }
-  return TreeHealth.dead;
-}
 
-/// Maps current streak to growth stage (streak is 0 until first water).
-GrowthStage growthStageForStreak(int streak) {
-  if (streak <= 2) return GrowthStage.seed;
-  if (streak <= 6) return GrowthStage.sprout;
-  if (streak <= 13) return GrowthStage.smallTree;
-  if (streak <= 29) return GrowthStage.youngTree;
-  return GrowthStage.matureTree;
+  factory TreeModel.fromJson(Map<String, dynamic> json) {
+    return TreeModel(
+      createdAtIso: json['createdAtIso'] as String,
+      lastWateredDateIso: json['lastWateredDateIso'] as String?,
+      streakDays: (json['streakDays'] as num?)?.toInt() ?? 0,
+      totalDaysCared: (json['totalDaysCared'] as num?)?.toInt() ?? 0,
+      isDead: json['isDead'] as bool? ?? false,
+    );
+  }
+
+  /// True if the user already watered during the current calendar day.
+  bool get hasWateredToday {
+    if (lastWateredDateIso == null) return false;
+    final today = _dateOnly(DateTime.now());
+    final last = _parseLocalDateOnly(lastWateredDateIso!);
+    if (last == null) return false;
+    return _dateOnly(last) == today;
+  }
+
+  /// Calendar days missed since last watering.
+  ///
+  /// Rules:
+  /// - missedDays = 0 => healthy
+  /// - missedDays = 1-2 => thirsty
+  /// - missedDays = 3-6 => wilting
+  /// - missedDays >= 7 => dead
+  int get missedDays {
+    if (lastWateredDateIso == null) return 0;
+    final today = _dateOnly(DateTime.now());
+    final last = _parseLocalDateOnly(lastWateredDateIso!);
+    if (last == null) return 0;
+    final diff = today.difference(_dateOnly(last)).inDays;
+    return diff <= 0 ? 0 : diff;
+  }
+
+  TreeHealthState get healthState {
+    if (isDead || missedDays >= 7) return TreeHealthState.dead;
+    if (missedDays >= 3) return TreeHealthState.wilting;
+    if (missedDays >= 1) return TreeHealthState.thirsty;
+    return TreeHealthState.healthy;
+  }
+
+  TreeGrowthStage get growthStage {
+    if (streakDays <= 2) return TreeGrowthStage.seed;
+    if (streakDays <= 6) return TreeGrowthStage.sprout;
+    if (streakDays <= 13) return TreeGrowthStage.small;
+    if (streakDays <= 29) return TreeGrowthStage.young;
+    return TreeGrowthStage.mature;
+  }
+
+  static DateTime _dateOnly(DateTime dt) => DateTime(dt.year, dt.month, dt.day);
+
+  /// Parses a local date-only string `yyyy-mm-dd` (or the first 10 chars of an
+  /// ISO string) into a local [DateTime] at midnight.
+  static DateTime? _parseLocalDateOnly(String raw) {
+    final datePart = raw.length >= 10 ? raw.substring(0, 10) : raw;
+    final parts = datePart.split('-');
+    if (parts.length != 3) return null;
+
+    final y = int.tryParse(parts[0]);
+    final m = int.tryParse(parts[1]);
+    final d = int.tryParse(parts[2]);
+    if (y == null || m == null || d == null) return null;
+
+    return DateTime(y, m, d);
+  }
 }

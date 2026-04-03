@@ -1,37 +1,42 @@
 import 'package:flutter/material.dart';
 
 import 'home_page.dart';
-import 'tree_service.dart';
 
-Future<void> main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  final treeService = await TreeService.create();
-  runApp(MyTreeApp(treeService: treeService));
+  runApp(const MyTreeApp());
 }
 
-/// Root widget: calm theme and single [HomePage].
 class MyTreeApp extends StatelessWidget {
-  const MyTreeApp({super.key, required this.treeService});
-
-  final TreeService treeService;
+  const MyTreeApp({super.key});
 
   @override
   Widget build(BuildContext context) {
-    const seed = Color(0xFF4A7C6E);
-
     return MaterialApp(
       title: 'MyTree',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        useMaterial3: true,
+        scaffoldBackgroundColor: const Color(0xFFF3F6F2),
         colorScheme: ColorScheme.fromSeed(
-          seedColor: seed,
-          brightness: Brightness.light,
-          surface: const Color(0xFFEFF5F0),
+          seedColor: const Color(0xFF5C8D7C),
         ),
-        scaffoldBackgroundColor: const Color(0xFFEFF5F0),
+        textTheme: const TextTheme(
+          headlineMedium: TextStyle(
+            fontSize: 28,
+            fontWeight: FontWeight.w700,
+            color: Color(0xFF2E5449),
+          ),
+          bodyLarge: TextStyle(
+            fontSize: 16,
+            color: Color(0xFF66756D),
+          ),
+          bodyMedium: TextStyle(
+            fontSize: 14,
+            color: Color(0xFF66756D),
+          ),
+        ),
       ),
-      home: HomePage(treeService: treeService),
+      home: const HomePage(),
     );
   }
 }

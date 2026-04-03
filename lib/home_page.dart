@@ -1,325 +1,594 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import 'tree_model.dart';
 import 'tree_service.dart';
 
-/// Single main screen: tree illustration, status, streak, and water / restart actions.
 class HomePage extends StatefulWidget {
-  const HomePage({super.key, required this.treeService});
-
-  final TreeService treeService;
+  const HomePage({super.key});
 
   @override
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
-  TreeState? _state;
-  bool _busy = false;
+class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
+  final TreeService _treeService = TreeService();
+
+  TreeModel? _tree;
+  bool _loading = true;
+  bool _watering = false;
+
+  late final AnimationController _swayController;
+  late final AnimationController _pulseController;
+  late final Animation<double> _pulseAnimation;
 
   @override
   void initState() {
     super.initState();
-    _refresh();
+
+    // Small continuous left-right sway.
+    _swayController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 3),
+    )..repeat(reverse: true);
+
+    // Short pulse when the user waters.
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 450),
+    );
+
+    _pulseAnimation = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween(begin: 1.0, end: 1.08).chain(
+          CurveTween(curve: Curves.easeOut),
+        ),
+        weight: 50,
+      ),
+      TweenSequenceItem(
+        tween: Tween(begin: 1.08, end: 1.0).chain(
+          CurveTween(curve: Curves.easeInOut),
+        ),
+        weight: 50,
+      ),
+    ]).animate(_pulseController);
+
+    _load();
   }
 
-  void _refresh() {
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    final tree = await _treeService.loadTree();
+    if (!mounted) return;
     setState(() {
-      _state = widget.treeService.loadState();
+      _tree = tree;
+      _loading = false;
     });
   }
 
-  Future<void> _onWaterToday() async {
-    if (_busy || _state == null || _state!.isDead) return;
-    setState(() => _busy = true);
-    await widget.treeService.waterToday();
-    if (mounted) {
-      setState(() {
-        _state = widget.treeService.loadState();
-        _busy = false;
-      });
-    }
+  Future<void> _waterToday() async {
+    if (_tree == null || _watering) return;
+    if (_tree!.hasWateredToday) return;
+    if (_tree!.healthState == TreeHealthState.dead) return;
+
+    setState(() => _watering = true);
+
+    final updated = await _treeService.waterToday();
+    await _pulseController.forward(from: 0);
+
+    if (!mounted) return;
+    setState(() {
+      _tree = updated;
+      _watering = false;
+    });
   }
 
-  Future<void> _onRestart() async {
-    if (_busy) return;
-    setState(() => _busy = true);
-    await widget.treeService.restartFromSeed();
-    if (mounted) {
-      setState(() {
-        _state = widget.treeService.loadState();
-        _busy = false;
-      });
-    }
+  Future<void> _restart() async {
+    final updated = await _treeService.restartTree();
+    if (!mounted) return;
+    setState(() => _tree = updated);
+  }
+
+  @override
+  void dispose() {
+    _swayController.dispose();
+    _pulseController.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final state = _state;
+    final tree = _tree;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFEFF5F0),
       body: SafeArea(
-        child: state == null
+        child: _loading || tree == null
             ? const Center(child: CircularProgressIndicator())
             : Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
                 child: Column(
                   children: [
+                    const SizedBox(height: 12),
                     Text(
                       'MyTree',
-                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                            color: const Color(0xFF2D4A3E),
-                            fontWeight: FontWeight.w600,
+                      style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                            fontSize: 34,
+                            fontWeight: FontWeight.w800,
                           ),
                     ),
                     const SizedBox(height: 8),
                     Text(
                       'Water once a day to help it grow.',
                       textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: const Color(0xFF5C7268),
-                          ),
-                    ),
-                    const Spacer(),
-                    _TreeIllustration(state: state),
-                    const Spacer(),
-                    Text(
-                      'Status: ${state.statusLabel}',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            color: const Color(0xFF2D4A3E),
-                            fontWeight: FontWeight.w600,
-                          ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Streak: ${state.streak} day${state.streak == 1 ? '' : 's'}',
                       style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                            color: const Color(0xFF5C7268),
+                            fontSize: 17,
                           ),
+                    ),
+                    Expanded(
+                      child: Center(
+                        child: AnimatedBuilder(
+                          animation: Listenable.merge([
+                            _swayController,
+                            _pulseAnimation,
+                          ]),
+                          builder: (context, _) {
+                            return Transform.scale(
+                              scale: _pulseAnimation.value,
+                              child: Transform.rotate(
+                                angle: _treeSwayAngle(tree),
+                                child: TreeView(tree: tree),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
                     ),
                     const SizedBox(height: 24),
-                    if (state.isDead) ...[
-                      SizedBox(
-                        width: double.infinity,
-                        child: FilledButton(
-                          onPressed: _busy ? null : _onRestart,
-                          style: FilledButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            backgroundColor: const Color(0xFF4A7C6E),
-                          ),
-                          child: const Text('Plant a new seed'),
-                        ),
+                    Text(
+                      _statusTitle(tree),
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF2E5449),
                       ),
-                    ] else ...[
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      _streakLabel(tree.streakDays),
+                      style: const TextStyle(
+                        fontSize: 17,
+                        color: Color(0xFF66756D),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    if (tree.healthState == TreeHealthState.dead)
                       SizedBox(
                         width: double.infinity,
-                        child: FilledButton(
-                          onPressed: (state.wateredToday || _busy)
-                              ? null
-                              : _onWaterToday,
-                          style: FilledButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            backgroundColor: const Color(0xFF4A7C6E),
-                            disabledBackgroundColor: const Color(0xFFB8CEC4),
+                        height: 62,
+                        child: ElevatedButton(
+                          onPressed: _watering ? null : _restart,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF5C8D7C),
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(32),
+                            ),
+                          ),
+                          child: const Text(
+                            'Plant again',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      )
+                    else
+                      SizedBox(
+                        width: double.infinity,
+                        height: 62,
+                        child: ElevatedButton(
+                          onPressed: tree.hasWateredToday ? null : _waterToday,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF5C8D7C),
+                            disabledBackgroundColor: const Color(0xFFB8CAC1),
+                            foregroundColor: Colors.white,
+                            disabledForegroundColor: const Color(0xFF6F7F78),
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(32),
+                            ),
                           ),
                           child: Text(
-                            state.wateredToday ? 'Watered today' : 'Water today',
+                            tree.hasWateredToday ? 'Watered today' : 'Water today',
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
                         ),
                       ),
-                    ],
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 12),
                   ],
                 ),
               ),
       ),
     );
   }
+
+  double _treeSwayAngle(TreeModel tree) {
+    if (tree.healthState == TreeHealthState.dead) return 0;
+    final t = _swayController.value;
+    final amplitude = switch (tree.growthStage) {
+      TreeGrowthStage.seed => 0.015,
+      TreeGrowthStage.sprout => 0.02,
+      TreeGrowthStage.small => 0.025,
+      TreeGrowthStage.young => 0.02,
+      TreeGrowthStage.mature => 0.015,
+    };
+    return math.sin(t * math.pi * 2) * amplitude;
+  }
+
+  String _statusTitle(TreeModel tree) {
+    // Exact copy requested by the product spec.
+    switch (tree.healthState) {
+      case TreeHealthState.healthy:
+        return 'Healthy';
+      case TreeHealthState.thirsty:
+        return 'Needs water';
+      case TreeHealthState.wilting:
+        return 'Wilting';
+      case TreeHealthState.dead:
+        return 'Dead';
+    }
+  }
+
+  String _streakLabel(int streak) {
+    if (streak == 1) return 'Streak: 1 day';
+    return 'Streak: $streak days';
+  }
 }
 
-/// Large centered tree built from simple shapes (no external assets).
-class _TreeIllustration extends StatelessWidget {
-  const _TreeIllustration({required this.state});
+class TreeView extends StatelessWidget {
+  final TreeModel tree;
 
-  final TreeState state;
+  const TreeView({
+    super.key,
+    required this.tree,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final palette = _paletteFor(tree.healthState);
+
     return SizedBox(
-      height: 280,
-      width: 280,
-      child: CustomPaint(
-        painter: _TreePainter(state: state),
-        child: const SizedBox.expand(),
+      width: 260,
+      height: 260,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Positioned(
+            bottom: 36,
+            child: Container(
+              width: 230,
+              height: 36,
+              decoration: BoxDecoration(
+                color: palette.ground,
+                borderRadius: BorderRadius.circular(999),
+              ),
+            ),
+          ),
+          Positioned(
+            bottom: 52,
+            child: Container(
+              width: 92,
+              height: 30,
+              decoration: BoxDecoration(
+                color: palette.soil,
+                borderRadius: BorderRadius.circular(999),
+              ),
+            ),
+          ),
+          Positioned(
+            bottom: 72,
+            child: _buildTreeShape(palette),
+          ),
+        ],
       ),
     );
+  }
+
+  Widget _buildTreeShape(_TreePalette palette) {
+    switch (tree.growthStage) {
+      case TreeGrowthStage.seed:
+        return SizedBox(
+          width: 64,
+          height: 90,
+          child: Stack(
+            alignment: Alignment.bottomCenter,
+            children: [
+              Container(
+                width: 36,
+                height: 56,
+                decoration: BoxDecoration(
+                  color: palette.trunk,
+                  borderRadius: BorderRadius.circular(18),
+                ),
+              ),
+              Positioned(
+                top: 0,
+                child: Container(
+                  width: 28,
+                  height: 28,
+                  decoration: BoxDecoration(
+                    color: palette.leaf,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+
+      case TreeGrowthStage.sprout:
+        return SizedBox(
+          width: 84,
+          height: 120,
+          child: Stack(
+            alignment: Alignment.bottomCenter,
+            children: [
+              Container(
+                width: 24,
+                height: 72,
+                decoration: BoxDecoration(
+                  color: palette.trunk,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              Positioned(
+                top: 18,
+                left: 14,
+                child: Transform.rotate(
+                  angle: -0.5,
+                  child: Container(
+                    width: 26,
+                    height: 18,
+                    decoration: BoxDecoration(
+                      color: palette.leaf,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 10,
+                right: 14,
+                child: Transform.rotate(
+                  angle: 0.55,
+                  child: Container(
+                    width: 28,
+                    height: 18,
+                    decoration: BoxDecoration(
+                      color: palette.leaf,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+
+      case TreeGrowthStage.small:
+        return SizedBox(
+          width: 120,
+          height: 150,
+          child: Stack(
+            alignment: Alignment.bottomCenter,
+            children: [
+              Container(
+                width: 26,
+                height: 84,
+                decoration: BoxDecoration(
+                  color: palette.trunk,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              Positioned(
+                top: 8,
+                child: Container(
+                  width: 84,
+                  height: 58,
+                  decoration: BoxDecoration(
+                    color: palette.leaf,
+                    borderRadius: BorderRadius.circular(40),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+
+      case TreeGrowthStage.young:
+        return SizedBox(
+          width: 150,
+          height: 180,
+          child: Stack(
+            alignment: Alignment.bottomCenter,
+            children: [
+              Container(
+                width: 28,
+                height: 96,
+                decoration: BoxDecoration(
+                  color: palette.trunk,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+              Positioned(
+                top: 24,
+                child: Container(
+                  width: 110,
+                  height: 72,
+                  decoration: BoxDecoration(
+                    color: palette.leaf,
+                    borderRadius: BorderRadius.circular(50),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 0,
+                left: 34,
+                child: Container(
+                  width: 46,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: palette.leaf.withValues(alpha: 0.92),
+                    borderRadius: BorderRadius.circular(28),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 6,
+                right: 30,
+                child: Container(
+                  width: 42,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: palette.leaf.withValues(alpha: 0.92),
+                    borderRadius: BorderRadius.circular(26),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+
+      case TreeGrowthStage.mature:
+        return SizedBox(
+          width: 180,
+          height: 210,
+          child: Stack(
+            alignment: Alignment.bottomCenter,
+            children: [
+              Container(
+                width: 34,
+                height: 115,
+                decoration: BoxDecoration(
+                  color: palette.trunk,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+              Positioned(
+                top: 40,
+                child: Container(
+                  width: 130,
+                  height: 88,
+                  decoration: BoxDecoration(
+                    color: palette.leaf,
+                    borderRadius: BorderRadius.circular(60),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 8,
+                left: 28,
+                child: Container(
+                  width: 54,
+                  height: 50,
+                  decoration: BoxDecoration(
+                    color: palette.leaf.withValues(alpha: 0.94),
+                    borderRadius: BorderRadius.circular(30),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 4,
+                right: 24,
+                child: Container(
+                  width: 56,
+                  height: 52,
+                  decoration: BoxDecoration(
+                    color: palette.leaf.withValues(alpha: 0.94),
+                    borderRadius: BorderRadius.circular(32),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 24,
+                left: 12,
+                child: Container(
+                  width: 46,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: palette.leaf.withValues(alpha: 0.88),
+                    borderRadius: BorderRadius.circular(26),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 30,
+                right: 10,
+                child: Container(
+                  width: 44,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: palette.leaf.withValues(alpha: 0.88),
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+    }
+  }
+
+  _TreePalette _paletteFor(TreeHealthState state) {
+    switch (state) {
+      case TreeHealthState.healthy:
+        return const _TreePalette(
+          leaf: Color(0xFF63B66A),
+          trunk: Color(0xFF6B4B3E),
+          soil: Color(0xFF846258),
+          ground: Color(0xFFDDE9DD),
+        );
+      case TreeHealthState.thirsty:
+        return const _TreePalette(
+          leaf: Color(0xFF9CB86A),
+          trunk: Color(0xFF6B4B3E),
+          soil: Color(0xFF8B6A5F),
+          ground: Color(0xFFE2E7D9),
+        );
+      case TreeHealthState.wilting:
+        return const _TreePalette(
+          leaf: Color(0xFFC0A85E),
+          trunk: Color(0xFF705045),
+          soil: Color(0xFF8E6E63),
+          ground: Color(0xFFE9E0D1),
+        );
+      case TreeHealthState.dead:
+        return const _TreePalette(
+          leaf: Color(0xFF9D9488),
+          trunk: Color(0xFF6E615A),
+          soil: Color(0xFF88746A),
+          ground: Color(0xFFE3DDD8),
+        );
+    }
   }
 }
 
-class _TreePainter extends CustomPainter {
-  _TreePainter({required this.state});
+class _TreePalette {
+  final Color leaf;
+  final Color trunk;
+  final Color soil;
+  final Color ground;
 
-  final TreeState state;
-
-  Color get _soil => const Color(0xFF8D6E63);
-
-  /// Foliage / accent driven by health (green → yellow → grey).
-  Color get _leaf {
-    switch (state.health) {
-      case TreeHealth.healthy:
-        return const Color(0xFF66BB6A);
-      case TreeHealth.thirsty:
-        return const Color(0xFF9CCC65);
-      case TreeHealth.wilting:
-        return const Color(0xFFC0CA33);
-      case TreeHealth.dead:
-        return const Color(0xFF9E9E9E);
-    }
-  }
-
-  Color get _trunk => state.health == TreeHealth.dead
-      ? const Color(0xFF6D4C41)
-      : const Color(0xFF5D4037);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final cx = size.width / 2;
-    final baseY = size.height * 0.82;
-
-    // Ground
-    final ground = Paint()
-      ..color = const Color(0xFFC8E6C9).withValues(alpha: 0.5)
-      ..style = PaintingStyle.fill;
-    canvas.drawOval(
-      Rect.fromCenter(
-        center: Offset(cx, baseY + 8),
-        width: size.width * 0.9,
-        height: 36,
-      ),
-      ground,
-    );
-
-    switch (state.growthStage) {
-      case GrowthStage.seed:
-        _drawSeed(canvas, cx, baseY);
-        break;
-      case GrowthStage.sprout:
-        _drawSprout(canvas, cx, baseY);
-        break;
-      case GrowthStage.smallTree:
-        _drawSmallTree(canvas, cx, baseY);
-        break;
-      case GrowthStage.youngTree:
-        _drawYoungTree(canvas, cx, baseY);
-        break;
-      case GrowthStage.matureTree:
-        _drawMatureTree(canvas, cx, baseY);
-        break;
-    }
-  }
-
-  void _drawSeed(Canvas canvas, double cx, double baseY) {
-    final soil = Paint()..color = _soil;
-    canvas.drawOval(
-      Rect.fromCenter(center: Offset(cx, baseY), width: 56, height: 22),
-      soil,
-    );
-    final seed = Paint()..color = _trunk;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromCenter(center: Offset(cx, baseY - 18), width: 28, height: 36),
-        const Radius.circular(12),
-      ),
-      seed,
-    );
-    final sprout = Paint()..color = _leaf;
-    canvas.drawCircle(Offset(cx, baseY - 42), 10, sprout);
-  }
-
-  void _drawSprout(Canvas canvas, double cx, double baseY) {
-    final soil = Paint()..color = _soil;
-    canvas.drawOval(
-      Rect.fromCenter(center: Offset(cx, baseY), width: 72, height: 24),
-      soil,
-    );
-    final trunk = Paint()
-      ..color = _trunk
-      ..strokeWidth = 8
-      ..strokeCap = StrokeCap.round;
-    canvas.drawLine(Offset(cx, baseY - 4), Offset(cx, baseY - 70), trunk);
-    final leaf = Paint()..color = _leaf;
-    canvas.drawOval(
-      Rect.fromCenter(center: Offset(cx - 22, baseY - 78), width: 36, height: 22),
-      leaf,
-    );
-    canvas.drawOval(
-      Rect.fromCenter(center: Offset(cx + 22, baseY - 74), width: 36, height: 22),
-      leaf,
-    );
-  }
-
-  void _drawSmallTree(Canvas canvas, double cx, double baseY) {
-    final soil = Paint()..color = _soil;
-    canvas.drawOval(
-      Rect.fromCenter(center: Offset(cx, baseY), width: 88, height: 28),
-      soil,
-    );
-    final trunk = Paint()..color = _trunk;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromCenter(center: Offset(cx, baseY - 36), width: 22, height: 72),
-        const Radius.circular(6),
-      ),
-      trunk,
-    );
-    final crown = Paint()..color = _leaf;
-    canvas.drawCircle(Offset(cx, baseY - 100), 52, crown);
-  }
-
-  void _drawYoungTree(Canvas canvas, double cx, double baseY) {
-    final soil = Paint()..color = _soil;
-    canvas.drawOval(
-      Rect.fromCenter(center: Offset(cx, baseY), width: 100, height: 30),
-      soil,
-    );
-    final trunk = Paint()..color = _trunk;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromCenter(center: Offset(cx, baseY - 50), width: 28, height: 100),
-        const Radius.circular(8),
-      ),
-      trunk,
-    );
-    final crown = Paint()..color = _leaf;
-    canvas.drawCircle(Offset(cx - 18, baseY - 118), 48, crown);
-    canvas.drawCircle(Offset(cx + 22, baseY - 108), 52, crown);
-  }
-
-  void _drawMatureTree(Canvas canvas, double cx, double baseY) {
-    final soil = Paint()..color = _soil;
-    canvas.drawOval(
-      Rect.fromCenter(center: Offset(cx, baseY), width: 120, height: 34),
-      soil,
-    );
-    final trunk = Paint()..color = _trunk;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromCenter(center: Offset(cx, baseY - 58), width: 34, height: 116),
-        const Radius.circular(10),
-      ),
-      trunk,
-    );
-    final crown = Paint()..color = _leaf;
-    canvas.drawCircle(Offset(cx, baseY - 132), 58, crown);
-    canvas.drawCircle(Offset(cx - 44, baseY - 112), 50, crown);
-    canvas.drawCircle(Offset(cx + 44, baseY - 112), 50, crown);
-    canvas.drawCircle(Offset(cx - 24, baseY - 96), 44, crown);
-    canvas.drawCircle(Offset(cx + 28, baseY - 92), 44, crown);
-  }
-
-  @override
-  bool shouldRepaint(covariant _TreePainter oldDelegate) {
-    return oldDelegate.state != state;
-  }
+  const _TreePalette({
+    required this.leaf,
+    required this.trunk,
+    required this.soil,
+    required this.ground,
+  });
 }
