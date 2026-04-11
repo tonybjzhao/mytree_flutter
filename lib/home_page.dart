@@ -607,6 +607,32 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     });
   }
 
+  Future<void> _setDebugPaywallVariant(PaywallVariant variant) async {
+    await _experimentService.forceVariantForDebug(variant);
+    await _analyticsService.logEvent(
+      'debug_force_revive_variant',
+      params: {'variant': variant.code},
+    );
+    if (!mounted) return;
+    setState(() {
+      _revivePaywallVariant = variant;
+      _debugStateLine = 'debug variant=${variant.code} | ready for revive paywall';
+    });
+  }
+
+  Future<void> _resetDebugPaywallVariant() async {
+    await _experimentService.clearVariantForDebug();
+    await _analyticsService.logEvent(
+      'debug_reset_revive_variant',
+      params: {'variant': 'random'},
+    );
+    if (!mounted) return;
+    setState(() {
+      _revivePaywallVariant = PaywallVariant.emotional;
+      _debugStateLine = 'debug variant reset | next paywall uses random assignment';
+    });
+  }
+
   String _formatDateOnly(DateTime dt) {
     final y = dt.year.toString().padLeft(4, '0');
     final m = dt.month.toString().padLeft(2, '0');
@@ -1092,6 +1118,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                         padding: const EdgeInsets.only(top: 6),
                         child: _DebugTimeTravelPanel(
                           onChanged: _refreshAndLogDebugState,
+                          onSetPaywallVariant: _setDebugPaywallVariant,
+                          onResetPaywallVariant: _resetDebugPaywallVariant,
                         ),
                       ),
                     if (kDebugMode && _debugStateLine != null)
@@ -1874,9 +1902,15 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 }
 
 class _DebugTimeTravelPanel extends StatelessWidget {
-  const _DebugTimeTravelPanel({required this.onChanged});
+  const _DebugTimeTravelPanel({
+    required this.onChanged,
+    required this.onSetPaywallVariant,
+    required this.onResetPaywallVariant,
+  });
 
   final Future<void> Function(String action) onChanged;
+  final Future<void> Function(PaywallVariant variant) onSetPaywallVariant;
+  final Future<void> Function() onResetPaywallVariant;
 
   @override
   Widget build(BuildContext context) {
@@ -1963,6 +1997,34 @@ class _DebugTimeTravelPanel extends StatelessWidget {
               _chip(context, 'Streak-7', () async {
                 TreeDebugOverrides.fakeStreak = 7;
                 await onChanged('Streak-7');
+              }),
+            ],
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Paywall variant',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF557263),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              _chip(context, 'Var A', () async {
+                await onSetPaywallVariant(PaywallVariant.emotional);
+              }),
+              _chip(context, 'Var B', () async {
+                await onSetPaywallVariant(PaywallVariant.loss);
+              }),
+              _chip(context, 'Var C', () async {
+                await onSetPaywallVariant(PaywallVariant.growth);
+              }),
+              _chip(context, 'Var Reset', () async {
+                await onResetPaywallVariant();
               }),
             ],
           ),
