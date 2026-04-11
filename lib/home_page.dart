@@ -54,6 +54,12 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   bool get _allCategoriesUsed =>
       _usedCategories.length >= LifeCategory.values.length;
 
+  bool get _canAddMoreTrees {
+    if (_collection == null) return false;
+    if (!_premiumUnlocked) return _collection!.trees.isEmpty;
+    return !_allCategoriesUsed;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -212,16 +218,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   void _openCreateTreeSheet() {
-    if (_allCategoriesUsed) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('All available lives are already growing.'),
-          duration: Duration(seconds: 2),
-        ),
-      );
-      return;
-    }
-
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -806,13 +802,15 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         ),
     ];
 
-    slots.add(
-      TreeSlotData(
-        type: TreeSlotType.add,
-        semanticLabel: 'Add a new tree',
-        onTap: _handleAddTree,
-      ),
-    );
+    if (_canAddMoreTrees) {
+      slots.add(
+        TreeSlotData(
+          type: TreeSlotType.add,
+          semanticLabel: 'Add a new tree',
+          onTap: _handleAddTree,
+        ),
+      );
+    }
 
     return slots;
   }
