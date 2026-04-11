@@ -1790,12 +1790,13 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   double _heroScaleForStage(TreeGrowthStage stage) {
+    // Bumped ~8% across all stages per feedback (tree should feel like the hero)
     return switch (stage) {
-      TreeGrowthStage.seed => 1.14,
-      TreeGrowthStage.sprout => 1.25,
-      TreeGrowthStage.small => 1.38,
-      TreeGrowthStage.young => 1.53,
-      TreeGrowthStage.mature => 1.63,
+      TreeGrowthStage.seed => 1.23,
+      TreeGrowthStage.sprout => 1.35,
+      TreeGrowthStage.small => 1.49,
+      TreeGrowthStage.young => 1.65,
+      TreeGrowthStage.mature => 1.76,
     };
   }
 
@@ -2367,7 +2368,8 @@ class TreeView extends StatelessWidget {
 
     if (visualState == TreePageVisualState.dead) {
       return Transform.rotate(
-        angle: -0.12,
+        // +5° more lean per feedback for stronger emotional impact
+        angle: -0.21,
         child: _DeadTreeShape(
           trunkColor: palette.trunk,
           leafColor: palette.leaf,
@@ -2393,10 +2395,11 @@ class TreeView extends StatelessWidget {
                 top: 26 + topLift,
                 left: 14 + sideOffset,
                 child: Transform.rotate(
-                  angle: -0.38 + leafTilt,
+                  // +10° upward tilt per feedback
+                  angle: -0.56 + leafTilt,
                   child: Container(
                     width: canopyW(32),
-                    height: canopyH(16),
+                    height: canopyH(18),
                     decoration: leafDecoration(20),
                   ),
                 ),
@@ -2405,21 +2408,21 @@ class TreeView extends StatelessWidget {
                 top: 22 + topLift,
                 right: 14 - sideOffset,
                 child: Transform.rotate(
-                  angle: 0.42 + leafTilt * 0.9,
+                  angle: 0.60 + leafTilt * 0.9,
                   child: Container(
                     width: canopyW(34),
-                    height: canopyH(17),
+                    height: canopyH(19),
                     decoration: leafDecoration(20),
                   ),
                 ),
               ),
               Positioned(
-                top: 16 + topLift,
+                top: 14 + topLift,
                 child: Transform.rotate(
                   angle: leafTilt * 0.45,
                   child: Container(
-                    width: canopyW(14),
-                    height: canopyH(12),
+                    width: canopyW(15),
+                    height: canopyH(14),
                     decoration: leafDecoration(12, alpha: 0.94),
                   ),
                 ),
@@ -3244,7 +3247,10 @@ class _DeadTreeShape extends StatelessWidget {
   Widget build(BuildContext context) {
     final trunkTop = Color.lerp(trunkColor, Colors.white, 0.06) ?? trunkColor;
     final trunkBottom =
-        Color.lerp(trunkColor, Colors.black, 0.22) ?? trunkColor;
+        Color.lerp(trunkColor, Colors.black, 0.26) ?? trunkColor;
+    // Desaturate leaf for stronger dead feel
+    final deadLeaf = leafColor.withValues(alpha: 0.55);
+    final deadLeafFaint = leafColor.withValues(alpha: 0.38);
 
     return SizedBox(
       width: 104,
@@ -3326,40 +3332,26 @@ class _DeadTreeShape extends StatelessWidget {
             child: Transform.rotate(
               angle: -0.38,
               child: Container(
-                width: 11,
-                height: 6,
-                decoration: BoxDecoration(
-                  color: leafColor.withValues(alpha: 0.75),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-            ),
-          ),
-          Positioned(
-            bottom: 12,
-            left: 42,
-            child: Transform.rotate(
-              angle: -0.12,
-              child: Container(
                 width: 9,
                 height: 5,
                 decoration: BoxDecoration(
-                  color: leafColor.withValues(alpha: 0.62),
+                  color: deadLeaf,
                   borderRadius: BorderRadius.circular(8),
                 ),
               ),
             ),
           ),
+          // Middle fallen leaf removed for sparser, more desolate silhouette
           Positioned(
             bottom: 6,
             right: 30,
             child: Transform.rotate(
               angle: 0.5,
               child: Container(
-                width: 10,
+                width: 8,
                 height: 5,
                 decoration: BoxDecoration(
-                  color: leafColor.withValues(alpha: 0.7),
+                  color: deadLeafFaint,
                   borderRadius: BorderRadius.circular(8),
                 ),
               ),
