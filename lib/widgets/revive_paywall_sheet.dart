@@ -87,6 +87,15 @@ class RevivePaywallSheet extends StatelessWidget {
                 fontSize: 15,
               ),
             ),
+            const SizedBox(height: 8),
+            const Text(
+              'Revive available for 24 hours',
+              style: TextStyle(
+                color: Color(0xFF9ED49A),
+                fontWeight: FontWeight.w700,
+                fontSize: 12,
+              ),
+            ),
             const SizedBox(height: 20),
             _buildInfoCard(),
             const SizedBox(height: 14),

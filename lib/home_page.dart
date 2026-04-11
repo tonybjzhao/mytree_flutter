@@ -10,7 +10,10 @@ import 'app_clock.dart';
 import 'create_tree_sheet.dart';
 import 'iap_service.dart';
 import 'life_category.dart';
+import 'models/paywall_variant.dart';
 import 'premium_service.dart';
+import 'services/analytics_service.dart';
+import 'services/experiment_service.dart';
 import 'widgets/revive_paywall_sheet.dart';
 
 import 'tree_collection_model.dart';
@@ -37,6 +40,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   final TreeService _treeService = TreeService();
   final PremiumService _premiumService = PremiumService();
   final IapService _iapService = IapService();
+  final ExperimentService _experimentService = ExperimentService();
+  final AnalyticsService _analyticsService = AnalyticsService();
 
   TreeCollectionModel? _collection;
   bool _premiumUnlocked = false;
@@ -68,6 +73,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   bool _showDebugPanel = false;
   String? _debugStateLine;
   bool _pendingReviveAfterPurchase = false;
+  PaywallVariant _revivePaywallVariant = PaywallVariant.emotional;
   bool _heldToday = false;
   String? _heldTreeId;
   Set<String> _heldTreeIdsForDate = <String>{};
@@ -217,6 +223,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           Navigator.of(context).pop();
         }
         if (_pendingReviveAfterPurchase) {
+          await _analyticsService.logEvent(
+            'revive_paywall_purchase_success',
+            params: {'variant': _revivePaywallVariant.code},
+          );
           _pendingReviveAfterPurchase = false;
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (!mounted) return;
@@ -233,6 +243,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       onError: (message) {
         if (!mounted) return;
         setState(() => _purchaseBusy = false);
+        _analyticsService.logEvent(
+          'purchase_error',
+          params: {'message': message, 'variant': _revivePaywallVariant.code},
+        );
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(message)),
         );
@@ -362,6 +376,17 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     final tree = _collection?.currentTree;
     if (tree == null) return;
 
+    await _analyticsService.logEvent(
+      'revive_sheet_opened',
+      params: {
+        'variant': _revivePaywallVariant.code,
+        'streak': tree.streakDays,
+        'revive_count': tree.reviveCount,
+      },
+    );
+
+    if (!mounted) return;
+
     final result = await RevivePaywallSheet.show(
       context,
       streakDays: tree.streakDays,
@@ -373,11 +398,26 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
     switch (result) {
       case ReviveSheetResult.revive:
+        await _analyticsService.logEvent(
+          'revive_sheet_revive_tapped',
+          params: {'variant': _revivePaywallVariant.code},
+        );
         await _reviveTree();
       case ReviveSheetResult.showPaywall:
         _pendingReviveAfterPurchase = true;
-        _showPaywall();
+        await _analyticsService.logEvent(
+          'revive_sheet_paywall_tapped',
+          params: {
+            'variant': _revivePaywallVariant.code,
+            'streak': tree.streakDays,
+          },
+        );
+        _showPaywall(forRevive: true, sourceTree: tree);
       case ReviveSheetResult.letItGo:
+        await _analyticsService.logEvent(
+          'revive_sheet_let_go_tapped',
+          params: {'variant': _revivePaywallVariant.code},
+        );
         break;
       case null:
         break;
@@ -630,7 +670,37 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     _talkedTreeId = talked ? tree.id : null;
   }
 
-  void _showPaywall() {
+  void _showPaywall({bool forRevive = false, TreeModel? sourceTree}) async {
+    if (forRevive) {
+      _revivePaywallVariant = await _experimentService.getRevivePaywallVariant();
+      await _analyticsService.logEvent(
+        'revive_paywall_viewed',
+        params: {
+          'variant': _revivePaywallVariant.code,
+          'streak': sourceTree?.streakDays ?? 0,
+          'revive_count': sourceTree?.reviveCount ?? 0,
+        },
+      );
+    }
+
+    final paywallTitle = forRevive
+        ? 'You can still save it'
+        : 'Grow more lives';
+    final paywallSubtitle = forRevive
+        ? switch (_revivePaywallVariant) {
+            PaywallVariant.emotional =>
+              'Premium gives your tree a second life.',
+            PaywallVariant.loss =>
+              'Do not lose this tree and your streak progress.',
+            PaywallVariant.growth =>
+              'Unlock growth with revive, more trees, and progress safety.',
+          }
+        : 'Each tree holds a part of your life.';
+    final paywallEmoji = forRevive ? '🥀   🌱' : '🌱   🌿   🌳';
+    final ctaLabel = forRevive ? 'Save this tree 🌱' : 'Grow more lives 🌱';
+
+    if (!mounted) return;
+
     _paywallOpen = true;
     showModalBottomSheet<void>(
       context: context,
@@ -654,27 +724,38 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                   ),
                 ),
                 const SizedBox(height: 20),
-                const Text('🌱   🌿   🌳', style: TextStyle(fontSize: 28)),
+                Text(paywallEmoji, style: const TextStyle(fontSize: 28)),
                 const SizedBox(height: 18),
-                const Text(
-                  'Grow more lives',
+                Text(
+                  paywallTitle,
                   textAlign: TextAlign.center,
-                  style: TextStyle(
+                  style: const TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.w700,
                     color: Color(0xFF2E5449),
                   ),
                 ),
                 const SizedBox(height: 10),
-                const Text(
-                  'Each tree holds a part of your life.',
+                Text(
+                  paywallSubtitle,
                   textAlign: TextAlign.center,
-                  style: TextStyle(
+                  style: const TextStyle(
                     fontSize: 14,
                     color: Color(0xFF66756D),
                     height: 1.35,
                   ),
                 ),
+                if (forRevive) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    'Revive available for 24 hours',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF5C8D7C).withValues(alpha: 0.9),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 22),
                 SizedBox(
                   width: double.infinity,
@@ -684,6 +765,12 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                         ? null
                         : () async {
                             try {
+                              if (forRevive) {
+                                await _analyticsService.logEvent(
+                                  'revive_paywall_purchase_tapped',
+                                  params: {'variant': _revivePaywallVariant.code},
+                                );
+                              }
                               setState(() => _purchaseBusy = true);
                               await _iapService.buyPremium();
                             } catch (e) {
@@ -711,9 +798,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                               color: Colors.white,
                             ),
                           )
-                        : const Text(
-                            'Grow more lives 🌱',
-                            style: TextStyle(
+                        : Text(
+                            ctaLabel,
+                            style: const TextStyle(
                               fontSize: 17,
                               fontWeight: FontWeight.w700,
                             ),
@@ -731,6 +818,12 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                       ? null
                       : () async {
                           try {
+                            if (forRevive) {
+                              await _analyticsService.logEvent(
+                                'revive_paywall_restore_tapped',
+                                params: {'variant': _revivePaywallVariant.code},
+                              );
+                            }
                             setState(() => _purchaseBusy = true);
                             await _iapService.restorePurchases();
                           } catch (e) {
@@ -752,7 +845,16 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         );
       },
     ).whenComplete(() {
-      if (mounted) setState(() => _paywallOpen = false);
+      if (!mounted) return;
+      setState(() {
+        _paywallOpen = false;
+        _purchaseBusy = false;
+      });
+
+      // If user dismisses revive paywall without purchasing, clear pending revive.
+      if (forRevive && _pendingReviveAfterPurchase) {
+        _pendingReviveAfterPurchase = false;
+      }
     });
   }
 
