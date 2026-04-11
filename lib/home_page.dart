@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'create_tree_sheet.dart';
+import 'dead_tree_overlay.dart';
 import 'life_category.dart';
 import 'premium_service.dart';
 
@@ -403,10 +404,12 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     final tree = _collection?.currentTree;
 
     return Scaffold(
-      body: SafeArea(
-        child: _loading || tree == null
-            ? const Center(child: CircularProgressIndicator())
-            : Padding(
+      body: Stack(
+        children: [
+          SafeArea(
+            child: _loading || tree == null
+                ? const Center(child: CircularProgressIndicator())
+                : Padding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 24,
                   vertical: 20,
@@ -652,30 +655,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                       ),
                     ),
                     const SizedBox(height: 18),
-                    if (tree.healthState == TreeHealthState.dead)
-                      SizedBox(
-                        width: double.infinity,
-                        height: 62,
-                        child: ElevatedButton(
-                          onPressed: _watering ? null : _restart,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF5C8D7C),
-                            foregroundColor: Colors.white,
-                            elevation: 0,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(32),
-                            ),
-                          ),
-                          child: const Text(
-                            'Plant again',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                      )
-                    else
+                    if (tree.healthState != TreeHealthState.dead)
                       SizedBox(
                         width: double.infinity,
                         height: 62,
@@ -709,6 +689,17 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                   ],
                 ),
               ),
+          ),
+          // Dead tree overlay — covers everything when tree has withered.
+          if (!(_loading || tree == null) &&
+              tree.healthState == TreeHealthState.dead)
+            Positioned.fill(
+              child: DeadTreeOverlay(
+                livedDays: tree.streakDays,
+                onRestart: _restart,
+              ),
+            ),
+        ],
       ),
     );
   }
