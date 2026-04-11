@@ -89,7 +89,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
   bool get _canAddMoreTrees {
     if (_collection == null) return false;
-    if (!_premiumUnlocked) return _collection!.trees.isEmpty;
+    // Keep an add slot visible for free users so they can open paywall.
+    if (!_premiumUnlocked) return true;
     return !_allCategoriesUsed;
   }
 
@@ -1298,13 +1299,30 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                     if (!_premiumUnlocked && (_collection?.trees.length ?? 0) == 1)
                       Padding(
                         padding: const EdgeInsets.only(top: 6),
-                        child: Text(
-                          'Your first tree is fully free. Water it daily and watch it grow.',
-                          textAlign: TextAlign.center,
-                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            fontSize: 13,
-                            color: const Color(0xFF7B8A83),
-                          ),
+                        child: Column(
+                          children: [
+                            Text(
+                              'Your first tree is fully free. Water it daily and watch it grow.',
+                              textAlign: TextAlign.center,
+                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                fontSize: 13,
+                                color: const Color(0xFF7B8A83),
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            TextButton(
+                              onPressed: _showPaywall,
+                              style: TextButton.styleFrom(
+                                visualDensity: VisualDensity.compact,
+                                foregroundColor: const Color(0xFF5C8D7C),
+                                textStyle: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              child: const Text('Unlock Premium to grow more lives'),
+                            ),
+                          ],
                         ),
                       ),
                     SizedBox(
