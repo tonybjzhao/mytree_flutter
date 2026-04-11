@@ -26,6 +26,9 @@ class TreeModel {
   /// Stored dead flag (redundant with missedDays >= 7, but keeps UI stable).
   final bool isDead;
 
+  /// Number of times this tree has been revived after death.
+  final int reviveCount;
+
   const TreeModel({
     required this.id,
     required this.category,
@@ -34,6 +37,7 @@ class TreeModel {
     required this.streakDays,
     required this.totalDaysCared,
     required this.isDead,
+    this.reviveCount = 0,
   });
 
   factory TreeModel.initial({required LifeCategory category, String? id}) {
@@ -57,6 +61,7 @@ class TreeModel {
     int? streakDays,
     int? totalDaysCared,
     bool? isDead,
+    int? reviveCount,
   }) {
     return TreeModel(
       id: id ?? this.id,
@@ -66,6 +71,7 @@ class TreeModel {
       streakDays: streakDays ?? this.streakDays,
       totalDaysCared: totalDaysCared ?? this.totalDaysCared,
       isDead: isDead ?? this.isDead,
+      reviveCount: reviveCount ?? this.reviveCount,
     );
   }
 
@@ -78,6 +84,7 @@ class TreeModel {
       'streakDays': streakDays,
       'totalDaysCared': totalDaysCared,
       'isDead': isDead,
+      'reviveCount': reviveCount,
     };
   }
 
@@ -93,6 +100,7 @@ class TreeModel {
       streakDays: (json['streakDays'] as num?)?.toInt() ?? 0,
       totalDaysCared: (json['totalDaysCared'] as num?)?.toInt() ?? 0,
       isDead: json['isDead'] as bool? ?? false,
+      reviveCount: (json['reviveCount'] as num?)?.toInt() ?? 0,
     );
   }
 

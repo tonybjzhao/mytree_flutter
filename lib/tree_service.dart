@@ -136,6 +136,25 @@ class TreeService {
     return updatedCollection;
   }
 
+  /// Revives the currently selected dead tree: marks alive, resets to today,
+  /// preserves streak (minimum 1), increments reviveCount.
+  Future<TreeCollectionModel> reviveCurrentTree() async {
+    final collection = await loadCollection();
+    final current = collection.currentTree;
+    final today = _dateOnly(AppClock.now());
+    final revived = current.copyWith(
+      isDead: false,
+      lastWateredDateIso: _formatLocalDateOnly(today),
+      streakDays: current.streakDays > 0 ? current.streakDays : 1,
+      reviveCount: current.reviveCount + 1,
+    );
+    final updated = collection.copyWith(
+      trees: _replaceAt(collection.trees, collection.currentIndex, revived),
+    );
+    await saveCollection(updated);
+    return updated;
+  }
+
   /// After death, user plants a new seed for the current tree.
   Future<TreeCollectionModel> restartCurrentTree() async {
     final collection = await loadCollection();

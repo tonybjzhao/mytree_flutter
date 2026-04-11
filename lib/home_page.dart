@@ -11,6 +11,7 @@ import 'create_tree_sheet.dart';
 import 'iap_service.dart';
 import 'life_category.dart';
 import 'premium_service.dart';
+import 'widgets/revive_paywall_sheet.dart';
 
 import 'tree_collection_model.dart';
 import 'tree_slot_icon.dart';
@@ -55,6 +56,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   late final Animation<double> _glowOpacityAnimation;
   late final AnimationController _dropController;
   late final Animation<double> _dropAnimation;
+  late final AnimationController _reviveFlashController;
+  late final AnimationController _deadFloatController;
 
   Timer? _feedbackTimer;
   Timer? _careToastTimer;
@@ -64,6 +67,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   bool _showMilestoneBadgeGlow = false;
   bool _showDebugPanel = false;
   String? _debugStateLine;
+  bool _pendingReviveAfterPurchase = false;
   bool _heldToday = false;
   String? _heldTreeId;
   Set<String> _heldTreeIdsForDate = <String>{};
@@ -169,6 +173,16 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       end: 20,
     ).animate(CurvedAnimation(parent: _dropController, curve: Curves.easeIn));
 
+    _reviveFlashController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 950),
+    );
+
+    _deadFloatController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 3200),
+    )..repeat(reverse: true);
+
     _load();
   }
 
@@ -202,7 +216,13 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           _paywallOpen = false;
           Navigator.of(context).pop();
         }
-        if (_shouldAddAfterUnlock) {
+        if (_pendingReviveAfterPurchase) {
+          _pendingReviveAfterPurchase = false;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            _reviveTree();
+          });
+        } else if (_shouldAddAfterUnlock) {
           _shouldAddAfterUnlock = false;
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (!mounted) return;
@@ -323,6 +343,45 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       _collection = updated;
       _syncInteractionStateForCurrentTree(updated);
     });
+  }
+
+  Future<void> _reviveTree() async {
+    final updatedCollection = await _treeService.reviveCurrentTree();
+    if (!mounted) return;
+    setState(() {
+      _collection = updatedCollection;
+      _syncInteractionStateForCurrentTree(updatedCollection);
+    });
+    await _reviveFlashController.forward(from: 0);
+    if (!mounted) return;
+    HapticFeedback.mediumImpact();
+    _showToastMessage('Your tree is breathing again 🌱');
+  }
+
+  Future<void> _showReviveSheet() async {
+    final tree = _collection?.currentTree;
+    if (tree == null) return;
+
+    final result = await RevivePaywallSheet.show(
+      context,
+      streakDays: tree.streakDays,
+      reviveCount: tree.reviveCount,
+      isPremium: _premiumUnlocked,
+    );
+
+    if (!mounted) return;
+
+    switch (result) {
+      case ReviveSheetResult.revive:
+        await _reviveTree();
+      case ReviveSheetResult.showPaywall:
+        _pendingReviveAfterPurchase = true;
+        _showPaywall();
+      case ReviveSheetResult.letItGo:
+        break;
+      case null:
+        break;
+    }
   }
 
   Future<void> _selectTree(int index) async {
@@ -707,6 +766,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     _swayController.dispose();
     _pulseController.dispose();
     _dropController.dispose();
+    _reviveFlashController.dispose();
+    _deadFloatController.dispose();
     _iapService.dispose();
     super.dispose();
   }
@@ -1111,8 +1172,18 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                             _swayController,
                             _pulseController,
                             _dropController,
+                            _reviveFlashController,
+                            _deadFloatController,
                           ]),
                           builder: (context, _) {
+                            final isDead = tree.healthState == TreeHealthState.dead;
+                            final deadFloatY = isDead
+                                ? math.sin(_deadFloatController.value * math.pi * 2) * 3.0
+                                : 0.0;
+                            final reviveGlow = _reviveFlashController.isAnimating
+                                ? (math.sin(_reviveFlashController.value * math.pi)
+                                    .clamp(0.0, 1.0))
+                                : 0.0;
                             return SizedBox(
                               width: 320,
                               height: 320,
@@ -1197,24 +1268,42 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                                         ),
                                       );
                                     },
-                                    child: Transform.scale(
-                                      key: ValueKey(
-                                        '${_collection!.currentIndex}-${tree.streakDays}-${tree.healthState.name}',
-                                      ),
-                                      scale: _heroScaleForStage(tree.growthStage) *
-                                          _breatheScaleAnimation.value *
-                                          _pulseAnimation.value,
-                                      child: Transform.rotate(
-                                        angle: _treeSwayAngle(tree),
-                                        child: TreeView(
-                                          tree: tree,
-                                          visualState: visualState,
-                                          isNight: isNight,
-                                          swayT: _swayController.value,
+                                    child: Transform.translate(
+                                      offset: Offset(0, deadFloatY),
+                                      child: Transform.scale(
+                                        key: ValueKey(
+                                          '${_collection!.currentIndex}-${tree.streakDays}-${tree.healthState.name}',
+                                        ),
+                                        scale: _heroScaleForStage(tree.growthStage) *
+                                            _breatheScaleAnimation.value *
+                                            _pulseAnimation.value,
+                                        child: Transform.rotate(
+                                          angle: _treeSwayAngle(tree),
+                                          child: TreeView(
+                                            tree: tree,
+                                            visualState: visualState,
+                                            isNight: isNight,
+                                            swayT: _swayController.value,
+                                          ),
                                         ),
                                       ),
                                     ),
                                   ),
+                                  // Revive flash: green-white burst on recovery
+                                  if (reviveGlow > 0)
+                                    IgnorePointer(
+                                      child: Center(
+                                        child: Container(
+                                          width: 200 * (0.7 + reviveGlow * 0.4),
+                                          height: 200 * (0.7 + reviveGlow * 0.4),
+                                          decoration: BoxDecoration(
+                                            shape: BoxShape.circle,
+                                            color: const Color(0xFFA8F08C)
+                                                .withValues(alpha: reviveGlow * 0.30),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
                                 ],
                               ),
                             );
@@ -1253,22 +1342,36 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                     const SizedBox(height: 18),
                     if (tree.healthState == TreeHealthState.dead) ...[
                       _DeadMemoryPill(streakDays: tree.streakDays),
-                      // Start again button
+                      // Revive CTA — emotional primary action
                       SizedBox(
                         width: double.infinity,
                         height: 62,
                         child: ElevatedButton(
-                          onPressed: _watering ? null : _restart,
+                          onPressed: _watering ? null : _showReviveSheet,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: accentFill,
                             foregroundColor: Colors.white,
                             elevation: 0,
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(32)),
                           ),
-                          child: const Text(
-                            'Start again',
-                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                          child: Text(
+                            tree.reviveCount == 0
+                                ? 'Give it one more chance 🌱'
+                                : 'Revive my tree 🌱',
+                            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
                           ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      // Start fresh — secondary, smaller
+                      TextButton(
+                        onPressed: _watering ? null : _restart,
+                        style: TextButton.styleFrom(
+                          foregroundColor: const Color(0xFF7B8A83),
+                        ),
+                        child: const Text(
+                          'Start fresh',
+                          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
                         ),
                       ),
                     ] else
@@ -1517,7 +1620,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           : 'It feels seen and encouraged',
       TreePageVisualState.thirsty => 'A little thirsty',
       TreePageVisualState.wilting => 'Still waiting for you',
-      TreePageVisualState.dead => 'This tree has withered',
+      TreePageVisualState.dead => 'It doesn\u2019t have to end here',
     };
   }
 
@@ -1545,7 +1648,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             : 'One more gentle action is available today.',
       TreePageVisualState.thirsty => '${tree.category.title} needs a gentle return today.',
       TreePageVisualState.wilting => 'Come back soon. ${tree.category.title} can still recover.',
-      TreePageVisualState.dead => 'A new start can help it grow again.',
+      TreePageVisualState.dead => 'One small action can bring it back.',
     };
   }
 
@@ -1567,8 +1670,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   String _deadStreakLabel(int streak) {
-    if (streak == 1) return 'Cared for 1 day before resting';
-    return 'Cared for $streak days before resting';
+    if (streak <= 0) return 'It stopped growing before it rooted.';
+    if (streak == 1) return 'Cared for 1 day — but it can still come back';
+    return 'Cared for $streak days — but it can still come back';
   }
 
   bool _isHeldForCurrentTree(TreeModel tree) {
@@ -2357,9 +2461,9 @@ class _AmbientGardenBackdrop extends StatelessWidget {
           ),
           if (isNight) ...const [
             _MoonHalo(),
-            _BackdropStar(alignment: Alignment(0.74, -0.84), size: 6, phase: 0.1),
-            _BackdropStar(alignment: Alignment(0.90, -0.72), size: 4, phase: 0.45),
-            _BackdropStar(alignment: Alignment(0.58, -0.68), size: 5, phase: 0.78),
+            _BackdropStar(alignment: Alignment(0.74, -0.84), size: 8, phase: 0.1),
+            _BackdropStar(alignment: Alignment(0.90, -0.72), size: 6, phase: 0.45),
+            _BackdropStar(alignment: Alignment(0.58, -0.68), size: 7, phase: 0.78),
           ],
         ],
       ),
@@ -2401,8 +2505,8 @@ class _MoonHaloState extends State<_MoonHalo>
         final t = _driftController.value;
         final driftX = math.sin(t * math.pi * 2) * 1.2;
         final driftY = math.cos(t * math.pi * 2) * 1.6;
-        final opacity = (0.34 + (math.sin(t * math.pi * 2) * 0.08))
-            .clamp(0.24, 0.42);
+        final opacity = (0.42 + (math.sin(t * math.pi * 2) * 0.10))
+            .clamp(0.30, 0.55);
 
         return Align(
           alignment: const Alignment(0.9, -0.9),
@@ -2417,7 +2521,7 @@ class _MoonHaloState extends State<_MoonHalo>
       },
       child: const Icon(
         Icons.brightness_2_rounded,
-        size: 32,
+        size: 36,
         color: Color(0xFFA9B5C1),
       ),
     );
@@ -2466,8 +2570,8 @@ class _BackdropStarState extends State<_BackdropStar>
       animation: _twinkleController,
       builder: (context, child) {
         final t = (_twinkleController.value + widget.phase) % 1.0;
-        final opacity = (0.34 + (math.sin(t * math.pi * 2) * 0.14))
-            .clamp(0.2, 0.52);
+        final opacity = (0.42 + (math.sin(t * math.pi * 2) * 0.18))
+            .clamp(0.28, 0.62);
 
         return Align(
           alignment: widget.alignment,
@@ -2478,7 +2582,7 @@ class _BackdropStarState extends State<_BackdropStar>
         width: widget.size,
         height: widget.size,
         decoration: const BoxDecoration(
-          color: Color(0x55EDF6FF),
+          color: Color(0x88EDF6FF),
           shape: BoxShape.circle,
         ),
       ),
