@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'create_tree_sheet.dart';
 import 'life_category.dart';
@@ -21,7 +22,7 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
-  static const int _freeLockedSlots = 2;
+  static const String _onboardingSeenKey = 'mytree_onboarding_seen_v1';
 
   final TreeService _treeService = TreeService();
 
@@ -30,6 +31,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   TreeCollectionModel? _collection;
   bool _premiumUnlocked = false;
   bool _shouldAddAfterUnlock = false;
+  bool _showOnboardingCard = false;
   bool _loading = true;
   bool _watering = false;
 
@@ -133,12 +135,22 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     setState(() => _loading = true);
     final collection = await _treeService.loadCollection();
     final premium = await _premiumService.isPremiumUnlocked();
+    final prefs = await SharedPreferences.getInstance();
+    final onboardingSeen = prefs.getBool(_onboardingSeenKey) ?? false;
     if (!mounted) return;
     setState(() {
       _collection = collection;
       _premiumUnlocked = premium;
+      _showOnboardingCard = !onboardingSeen;
       _loading = false;
     });
+  }
+
+  Future<void> _dismissOnboardingCard() async {
+    if (!_showOnboardingCard) return;
+    setState(() => _showOnboardingCard = false);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_onboardingSeenKey, true);
   }
 
   Future<void> _waterToday() async {
@@ -435,6 +447,79 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                         context,
                       ).textTheme.bodyLarge?.copyWith(fontSize: 17),
                     ),
+                    if (_showOnboardingCard)
+                      Container(
+                        width: double.infinity,
+                        margin: const EdgeInsets.only(top: 14),
+                        padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF3F8F5),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: const Color(0xFFD7E4DD)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Welcome to MyTree',
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF2E5449),
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            const Text(
+                              'This is your first life tree. Water it daily to grow from seed to canopy.',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Color(0xFF66756D),
+                                height: 1.35,
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            Row(
+                              children: [
+                                TextButton(
+                                  onPressed: _dismissOnboardingCard,
+                                  child: const Text(
+                                    'Skip',
+                                    style: TextStyle(
+                                      color: Color(0xFF6C7D75),
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                                const Spacer(),
+                                ElevatedButton(
+                                  onPressed: _dismissOnboardingCard,
+                                  style: ElevatedButton.styleFrom(
+                                    elevation: 0,
+                                    backgroundColor: const Color(0xFF5C8D7C),
+                                    foregroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(18),
+                                    ),
+                                  ),
+                                  child: const Text('Start growing'),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    if (!_premiumUnlocked && (_collection?.trees.length ?? 0) == 1)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text(
+                          'Your first tree is fully free. Water it daily and watch it grow.',
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            fontSize: 13,
+                            color: const Color(0xFF7B8A83),
+                          ),
+                        ),
+                      ),
                     Expanded(
                       child: Align(
                         alignment: const Alignment(0, -0.15),
@@ -698,22 +783,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           onTap: () => _selectTree(index),
         ),
     ];
-
-    if (!_premiumUnlocked) {
-      for (var index = 0; index < _freeLockedSlots; index++) {
-        slots.add(
-          TreeSlotData(
-            type: TreeSlotType.seed,
-            locked: true,
-            semanticLabel: 'Locked tree slot',
-            onTap: () {
-              _shouldAddAfterUnlock = true;
-              _showPaywall();
-            },
-          ),
-        );
-      }
-    }
 
     slots.add(
       TreeSlotData(
