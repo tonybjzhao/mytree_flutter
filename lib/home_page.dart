@@ -1093,19 +1093,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 ? const Center(child: CircularProgressIndicator())
                 : LayoutBuilder(
                     builder: (context, constraints) {
-                      final targetScale =
-                          (constraints.maxHeight / 820).clamp(0.90, 1.0);
-                      return ClipRect(
-                        child: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          alignment: Alignment.topCenter,
-                          child: SizedBox(
-                            width: constraints.maxWidth,
-                            height: constraints.maxHeight / targetScale,
-                            child: Transform.scale(
-                              scale: targetScale,
-                              alignment: Alignment.topCenter,
-                              child: Padding(
+                      return SizedBox.expand(
+                        child: Padding(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 20,
                               vertical: 14,
@@ -1614,9 +1603,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                   ],
                 ),
               ),
-                            ),
-                          ),
-                        ),
                       );
                     },
                   ),
