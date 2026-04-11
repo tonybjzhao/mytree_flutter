@@ -36,6 +36,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   static const String _holdStateTreeIdsKey = 'mytree_hold_state_tree_ids_v1';
   static const String _talkStateDateKey = 'mytree_talk_state_date_v1';
   static const String _talkStateTreeIdsKey = 'mytree_talk_state_tree_ids_v1';
+  static const bool _debugToolsEnabled = bool.fromEnvironment(
+    'MYTREE_DEBUG_TOOLS',
+    defaultValue: false,
+  );
 
   final TreeService _treeService = TreeService();
   final PremiumService _premiumService = PremiumService();
@@ -1073,7 +1077,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     final viewportHeight = MediaQuery.sizeOf(context).height;
     final isSmallScreen = viewportHeight < 760;
     final heroHeight = (viewportHeight * 0.33).clamp(206.0, 280.0);
-    final showDebugPanel = kDebugMode && (!isSmallScreen || _showDebugPanel);
+    final showDebugPanel =
+      _debugToolsEnabled && (!isSmallScreen || _showDebugPanel);
 
     return Scaffold(
       backgroundColor: isNight ? const Color(0xFFF3F6F1) : const Color(0xFFF7FAF6),
@@ -1093,8 +1098,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 ? const Center(child: CircularProgressIndicator())
                 : LayoutBuilder(
                     builder: (context, constraints) {
-                      return SizedBox.expand(
-                        child: Padding(
+                      final content = Padding(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 20,
                               vertical: 14,
@@ -1108,7 +1112,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                         currentIndex: _collection!.currentIndex,
                       ),
                     ),
-                    if (kDebugMode && isSmallScreen)
+                    if (_debugToolsEnabled && isSmallScreen)
                       Align(
                         alignment: Alignment.centerRight,
                         child: TextButton.icon(
@@ -1148,7 +1152,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                           onResetPremiumForDebug: _resetPremiumForDebug,
                         ),
                       ),
-                    if (kDebugMode && _debugStateLine != null)
+                    if (_debugToolsEnabled && _debugStateLine != null)
                       Padding(
                         padding: const EdgeInsets.only(top: 6),
                         child: Container(
@@ -1602,8 +1606,23 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                     const SizedBox(height: 8),
                   ],
                 ),
-              ),
-                      );
+              );
+
+                      // Keep release layout strictly one-screen, but allow debug
+                      // tools to scroll on smaller simulators to avoid overflow.
+                      if (_debugToolsEnabled && showDebugPanel) {
+                        return SingleChildScrollView(
+                          physics: const BouncingScrollPhysics(),
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(
+                              minHeight: constraints.maxHeight,
+                            ),
+                            child: content,
+                          ),
+                        );
+                      }
+
+                      return SizedBox.expand(child: content);
                     },
                   ),
           ),
