@@ -1,6 +1,7 @@
 // Data model + derived state rules for the virtual tree (no I/O).
 // Health and growth are derived from persisted dates and streak on each load.
 
+import 'app_clock.dart';
 import 'life_category.dart';
 
 enum TreeHealthState { healthy, thirsty, wilting, dead }
@@ -36,9 +37,9 @@ class TreeModel {
   });
 
   factory TreeModel.initial({required LifeCategory category, String? id}) {
-    final today = _dateOnly(DateTime.now());
+    final today = _dateOnly(AppClock.now());
     return TreeModel(
-      id: id ?? 'tree_${DateTime.now().microsecondsSinceEpoch}',
+      id: id ?? 'tree_${AppClock.now().microsecondsSinceEpoch}',
       category: category,
       createdAtIso: today.toIso8601String(),
       lastWateredDateIso: null,
@@ -85,7 +86,7 @@ class TreeModel {
     return TreeModel(
       id:
           json['id'] as String? ??
-          'tree_${json['createdAtIso'] ?? DateTime.now().microsecondsSinceEpoch}',
+          'tree_${json['createdAtIso'] ?? AppClock.now().microsecondsSinceEpoch}',
       category: category ?? LifeCategory.health,
       createdAtIso: json['createdAtIso'] as String,
       lastWateredDateIso: json['lastWateredDateIso'] as String?,
@@ -98,7 +99,7 @@ class TreeModel {
   /// True if the user already watered during the current calendar day.
   bool get hasWateredToday {
     if (lastWateredDateIso == null) return false;
-    final today = _dateOnly(DateTime.now());
+    final today = _dateOnly(AppClock.now());
     final last = _parseLocalDateOnly(lastWateredDateIso!);
     if (last == null) return false;
     return _dateOnly(last) == today;
@@ -113,7 +114,7 @@ class TreeModel {
   /// - missedDays >= 7 => dead
   int get missedDays {
     if (lastWateredDateIso == null) return 0;
-    final today = _dateOnly(DateTime.now());
+    final today = _dateOnly(AppClock.now());
     final last = _parseLocalDateOnly(lastWateredDateIso!);
     if (last == null) return 0;
     final diff = today.difference(_dateOnly(last)).inDays;

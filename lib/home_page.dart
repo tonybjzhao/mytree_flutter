@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'app_clock.dart';
 import 'create_tree_sheet.dart';
 import 'iap_service.dart';
 import 'life_category.dart';
@@ -370,7 +372,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   bool get _isNightTime {
-    final hour = DateTime.now().hour;
+    final hour = AppClock.now().hour;
     return hour >= 19 || hour < 6;
   }
 
@@ -439,10 +441,47 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   String _todayDateKey() {
-    final now = DateTime.now();
+    final now = AppClock.now();
     final month = now.month.toString().padLeft(2, '0');
     final day = now.day.toString().padLeft(2, '0');
     return '${now.year}-$month-$day';
+  }
+
+  TreeModel _debugAdjustedTree(TreeModel tree) {
+    if (!kDebugMode) return tree;
+    if (!TreeDebugOverrides.hasOverrides) return tree;
+
+    var adjusted = tree;
+
+    if (TreeDebugOverrides.fakeTreeAgeDays != null) {
+      final age = TreeDebugOverrides.fakeTreeAgeDays!.clamp(0, 3650);
+      final createdAt = AppClock.now().subtract(Duration(days: age));
+      adjusted = adjusted.copyWith(createdAtIso: createdAt.toIso8601String());
+    }
+
+    if (TreeDebugOverrides.fakeDaysSinceLastWater != null) {
+      final days = TreeDebugOverrides.fakeDaysSinceLastWater!.clamp(0, 3650);
+      final wateredDate = AppClock.now().subtract(Duration(days: days));
+      adjusted = adjusted.copyWith(
+        lastWateredDateIso: _formatDateOnly(wateredDate),
+        isDead: days >= 7,
+      );
+    }
+
+    if (TreeDebugOverrides.fakeStreak != null) {
+      adjusted = adjusted.copyWith(
+        streakDays: TreeDebugOverrides.fakeStreak!.clamp(0, 5000),
+      );
+    }
+
+    return adjusted;
+  }
+
+  String _formatDateOnly(DateTime dt) {
+    final y = dt.year.toString().padLeft(4, '0');
+    final m = dt.month.toString().padLeft(2, '0');
+    final d = dt.day.toString().padLeft(2, '0');
+    return '$y-$m-$d';
   }
 
   void _restoreInteractionState(
@@ -752,7 +791,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
-    final tree = _collection?.currentTree;
+    final sourceTree = _collection?.currentTree;
+    final tree = sourceTree == null ? null : _debugAdjustedTree(sourceTree);
     final visualState = tree == null
         ? TreePageVisualState.growing
         : _visualStateFor(tree);
@@ -813,6 +853,17 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                         currentIndex: _collection!.currentIndex,
                       ),
                     ),
+                    if (kDebugMode)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 10),
+                        child: _DebugTimeTravelPanel(
+                          onChanged: () async {
+                            await _load();
+                            if (!mounted) return;
+                            setState(() {});
+                          },
+                        ),
+                      ),
                     const SizedBox(height: 14),
                     Text(
                       'MyTree',
@@ -1516,6 +1567,134 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       hash = (hash * 16777619) & 0x7fffffff;
     }
     return hash;
+  }
+}
+
+class _DebugTimeTravelPanel extends StatelessWidget {
+  const _DebugTimeTravelPanel({required this.onChanged});
+
+  final Future<void> Function() onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF4F8F2),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFD8E4D6)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Debug: day offset ${AppClock.debugDayOffset}',
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF557263),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              _chip(context, 'D0', () async {
+                AppClock.setDebugDayOffset(0);
+                await onChanged();
+              }),
+              _chip(context, 'D1', () async {
+                AppClock.setDebugDayOffset(1);
+                await onChanged();
+              }),
+              _chip(context, 'D2', () async {
+                AppClock.setDebugDayOffset(2);
+                await onChanged();
+              }),
+              _chip(context, 'D3', () async {
+                AppClock.setDebugDayOffset(3);
+                await onChanged();
+              }),
+              _chip(context, 'D4', () async {
+                AppClock.setDebugDayOffset(4);
+                await onChanged();
+              }),
+              _chip(context, 'D7', () async {
+                AppClock.setDebugDayOffset(7);
+                await onChanged();
+              }),
+              _chip(context, 'Reset', () async {
+                AppClock.resetDayOffset();
+                TreeDebugOverrides.reset();
+                await onChanged();
+              }),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              _chip(context, 'Water-0', () async {
+                TreeDebugOverrides.fakeDaysSinceLastWater = 0;
+                await onChanged();
+              }),
+              _chip(context, 'Water-2', () async {
+                TreeDebugOverrides.fakeDaysSinceLastWater = 2;
+                await onChanged();
+              }),
+              _chip(context, 'Wilt', () async {
+                TreeDebugOverrides.fakeDaysSinceLastWater = 4;
+                await onChanged();
+              }),
+              _chip(context, 'Dead', () async {
+                TreeDebugOverrides.fakeDaysSinceLastWater = 8;
+                await onChanged();
+              }),
+              _chip(context, 'Streak-3', () async {
+                TreeDebugOverrides.fakeStreak = 3;
+                await onChanged();
+              }),
+              _chip(context, 'Streak-7', () async {
+                TreeDebugOverrides.fakeStreak = 7;
+                await onChanged();
+              }),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _chip(
+    BuildContext context,
+    String label,
+    Future<void> Function() onTap,
+  ) {
+    return InkWell(
+      onTap: () {
+        onTap();
+      },
+      borderRadius: BorderRadius.circular(999),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: const Color(0xFFD4E0D3)),
+        ),
+        child: Text(
+          label,
+          style: const TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF4F695D),
+          ),
+        ),
+      ),
+    );
   }
 }
 

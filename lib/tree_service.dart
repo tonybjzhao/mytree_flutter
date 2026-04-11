@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'app_clock.dart';
 import 'life_category.dart';
 import 'tree_collection_model.dart';
 import 'tree_model.dart';
@@ -100,7 +101,7 @@ class TreeService {
       return updatedCollection;
     }
 
-    final today = _dateOnly(DateTime.now());
+    final today = _dateOnly(AppClock.now());
 
     // Compute next streak:
     // - gap=1 => streak + 1
