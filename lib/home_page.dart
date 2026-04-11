@@ -512,20 +512,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   String _headerSubtitle(TreeModel tree) {
-    final base = '${tree.category.title} tree ${tree.category.emoji}';
-    if (!_isNightTime) return base;
-    if (tree.hasWateredToday) return '$base · Resting tonight';
-    return '$base · Waiting quietly';
-  }
-
-  String _growthStageLabel(TreeModel tree) {
-    return switch (tree.growthStage) {
-      TreeGrowthStage.seed => 'Seed stage',
-      TreeGrowthStage.sprout => 'Sprouting',
-      TreeGrowthStage.small => 'Growing leaves',
-      TreeGrowthStage.young => 'Young tree',
-      TreeGrowthStage.mature => 'Rooted canopy',
-    };
+    final day = math.max(tree.streakDays, 1);
+    return '${tree.category.title} tree · Day $day';
   }
 
   Color _leafBurstColor(LifeCategory category) {
@@ -535,11 +523,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       LifeCategory.work => const Color(0xFF5EA78E),
       LifeCategory.rest => const Color(0xFF7A98B3),
     };
-  }
-
-  String _stageBadgeText(TreeModel tree) {
-    final day = math.max(tree.streakDays, 1);
-    return 'Day $day · ${_growthStageLabel(tree)}';
   }
 
   String _todayDateKey() {
@@ -1089,7 +1072,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       : _accentTextColor(tree.category, isNight: isNight);
     final viewportHeight = MediaQuery.sizeOf(context).height;
     final isSmallScreen = viewportHeight < 760;
-    final heroHeight = (viewportHeight * 0.35).clamp(210.0, 290.0);
+    final heroHeight = (viewportHeight * 0.33).clamp(206.0, 280.0);
     final showDebugPanel = kDebugMode && (!isSmallScreen || _showDebugPanel);
 
     return Scaffold(
@@ -1110,31 +1093,26 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 ? const Center(child: CircularProgressIndicator())
                 : LayoutBuilder(
                     builder: (context, constraints) {
-                      return SingleChildScrollView(
-                        physics: const BouncingScrollPhysics(),
-                        child: ConstrainedBox(
-                          constraints: BoxConstraints(minHeight: constraints.maxHeight),
-                          child: Padding(
+                      final targetScale =
+                          (constraints.maxHeight / 820).clamp(0.90, 1.0);
+                      return ClipRect(
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.topCenter,
+                          child: SizedBox(
+                            width: constraints.maxWidth,
+                            height: constraints.maxHeight / targetScale,
+                            child: Transform.scale(
+                              scale: targetScale,
+                              alignment: Alignment.topCenter,
+                              child: Padding(
                             padding: const EdgeInsets.symmetric(
-                              horizontal: 24,
-                              vertical: 20,
+                              horizontal: 20,
+                              vertical: 14,
                             ),
                             child: Column(
                   children: [
-                    const SizedBox(height: 8),
-                    const Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        'Your lives',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF7B8A83),
-                          letterSpacing: 0.2,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 4),
                     TreeSlotsRow(
                       slots: _buildTreeSlots(
                         trees: _collection!.trees,
@@ -1205,83 +1183,33 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                           ),
                         ),
                       ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 6),
                     Text(
                       'MyTree',
                       style: Theme.of(context).textTheme.headlineMedium
-                          ?.copyWith(fontSize: 34, fontWeight: FontWeight.w800),
+                          ?.copyWith(fontSize: 31, fontWeight: FontWeight.w800),
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 4),
                     Text(
                       _headerSubtitle(tree),
                       textAlign: TextAlign.center,
                       style: Theme.of(
                         context,
-                      ).textTheme.bodyLarge?.copyWith(fontSize: 17),
+                      ).textTheme.bodyLarge?.copyWith(fontSize: 16),
                     ),
-                    const SizedBox(height: 10),
-                    AnimatedContainer(
-                      duration: const Duration(milliseconds: 420),
-                      curve: Curves.easeOutCubic,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 8,
-                      ),
-                      decoration: BoxDecoration(
-                        color: _showMilestoneBadgeGlow
-                            ? const Color(0xFFF7F1CF)
-                            : (isNight
-                                ? const Color(0xFFF0F4EE)
-                                : const Color(0xFFF3F8F2)),
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(
-                          color: _showMilestoneBadgeGlow
-                              ? const Color(0xFFE7CE7F)
-                              : (isNight
-                                  ? const Color(0xFFD7E1D6)
-                                  : const Color(0xFFD8E5D9)),
+                    if (_showMilestoneBadgeGlow)
+                      const Padding(
+                        padding: EdgeInsets.only(top: 2),
+                        child: Icon(
+                          Icons.auto_awesome,
+                          size: 12,
+                          color: Color(0xFF9E7A2B),
                         ),
-                        boxShadow: _showMilestoneBadgeGlow
-                            ? [
-                                BoxShadow(
-                                  color: const Color(0xFFE7CE7F)
-                                      .withValues(alpha: 0.28),
-                                  blurRadius: 16,
-                                  spreadRadius: 1,
-                                  offset: const Offset(0, 4),
-                                ),
-                              ]
-                            : null,
                       ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (_showMilestoneBadgeGlow) ...[
-                            const Icon(
-                              Icons.auto_awesome,
-                              size: 13,
-                              color: Color(0xFF9E7A2B),
-                            ),
-                            const SizedBox(width: 6),
-                          ],
-                          Text(
-                            _stageBadgeText(tree),
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              color: _showMilestoneBadgeGlow
-                                  ? const Color(0xFF8A6D2A)
-                                  : const Color(0xFF607267),
-                              letterSpacing: 0.2,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
                     if (_showOnboardingCard)
                       Container(
                         width: double.infinity,
-                        margin: const EdgeInsets.only(top: 14),
+                        margin: const EdgeInsets.only(top: 8),
                         padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
                         decoration: BoxDecoration(
                           color: const Color(0xFFF3F8F5),
@@ -1341,25 +1269,16 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                       ),
                     if (!_premiumUnlocked && (_collection?.trees.length ?? 0) == 1)
                       Padding(
-                        padding: const EdgeInsets.only(top: 6),
+                        padding: const EdgeInsets.only(top: 4),
                         child: Column(
                           children: [
-                            Text(
-                              'Your first tree is fully free. Water it daily and watch it grow.',
-                              textAlign: TextAlign.center,
-                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                fontSize: 13,
-                                color: const Color(0xFF7B8A83),
-                              ),
-                            ),
-                            const SizedBox(height: 4),
                             TextButton(
                               onPressed: _showPaywall,
                               style: TextButton.styleFrom(
                                 visualDensity: VisualDensity.compact,
                                 foregroundColor: const Color(0xFF5C8D7C),
                                 textStyle: const TextStyle(
-                                  fontSize: 12,
+                                  fontSize: 11,
                                   fontWeight: FontWeight.w700,
                                 ),
                               ),
@@ -1371,7 +1290,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                     SizedBox(
                       height: heroHeight,
                       child: Align(
-                        alignment: const Alignment(0, -0.2),
+                        alignment: const Alignment(0, -0.15),
                         child: AnimatedBuilder(
                           animation: Listenable.merge([
                             _breatheController,
@@ -1520,41 +1439,35 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                         ),
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    Text(
-                      _statusTitle(tree),
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                        color: _statusTitleColor(visualState),
-                      ),
-                    ),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 4),
                     Text(
                       tree.healthState == TreeHealthState.dead
-                            ? _deadStreakLabel(tree.streakDays)
-                            : _streakLabel(tree.streakDays),
+                          ? '${_statusTitle(tree)} · ${_deadStreakLabel(tree.streakDays)}'
+                          : '${_statusTitle(tree)} · ${_streakLabel(tree.streakDays)}',
                       style: TextStyle(
                         fontSize: 17,
+                        fontWeight: FontWeight.w700,
                         color: _streakColor(visualState),
                       ),
                     ),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 4),
                     Text(
-                      _supportLine(tree),
+                      tree.healthState == TreeHealthState.dead
+                          ? 'One small action can still bring it back.'
+                          : (_isNightTime ? 'Come back tomorrow' : _supportLine(tree)),
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 13,
                         color: _supportColor(visualState),
                       ),
                     ),
-                    const SizedBox(height: 18),
+                    const SizedBox(height: 10),
                     if (tree.healthState == TreeHealthState.dead) ...[
                       _DeadMemoryPill(streakDays: tree.streakDays),
                       // Revive CTA — emotional primary action
                       SizedBox(
                         width: double.infinity,
-                        height: 62,
+                        height: 56,
                         child: ElevatedButton(
                           onPressed: _watering ? null : _showReviveSheet,
                           style: ElevatedButton.styleFrom(
@@ -1567,11 +1480,11 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                             tree.reviveCount == 0
                                 ? 'Give it one more chance 🌱'
                                 : 'Revive my tree 🌱',
-                            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
                           ),
                         ),
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 4),
                       // Start fresh — secondary, smaller
                       TextButton(
                         onPressed: _watering ? null : _restart,
@@ -1580,14 +1493,14 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                         ),
                         child: const Text(
                           'Start fresh',
-                          style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
                         ),
                       ),
                     ] else
                       if (tree.hasWateredToday) ...[
                         SizedBox(
                           width: double.infinity,
-                          height: 62,
+                          height: 54,
                           child: ElevatedButton(
                             onPressed: _watering ? null : _replayCompletedMoment,
                             style: ElevatedButton.styleFrom(
@@ -1609,84 +1522,48 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                                 _waterButtonOverride ?? 'Done today',
                                 key: ValueKey(_waterButtonOverride ?? 'Done today'),
                                 style: const TextStyle(
-                                  fontSize: 18,
+                                  fontSize: 17,
                                   fontWeight: FontWeight.w700,
                                 ),
                               ),
                             ),
                           ),
                         ),
-                        const SizedBox(height: 10),
-                        SizedBox(
-                          width: double.infinity,
-                          height: 54,
-                          child: OutlinedButton(
-                            onPressed:
-                                _isHeldForCurrentTree(tree) ? null : _holdGently,
-                            style: OutlinedButton.styleFrom(
-                              side: BorderSide(
-                                color: _isHeldForCurrentTree(tree)
-                                    ? softBorder
-                                    : softBorder,
-                                width: 1.4,
-                              ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(30),
-                              ),
-                              backgroundColor: softAccent,
-                            ),
-                            child: Text(
-                              _isHeldForCurrentTree(tree)
+                        const SizedBox(height: 6),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            _CompactCircleActionButton(
+                              icon: Icons.pan_tool_alt_rounded,
+                              tooltip: _isHeldForCurrentTree(tree)
                                   ? 'Held gently today'
                                   : 'Hold gently',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w700,
-                                color: _isHeldForCurrentTree(tree)
-                                    ? accentText.withValues(alpha: 0.6)
-                                    : accentText,
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        SizedBox(
-                          width: double.infinity,
-                          height: 54,
-                          child: OutlinedButton(
-                            onPressed: _isTalkedForCurrentTree(tree)
-                                ? null
-                                : _saySomething,
-                            style: OutlinedButton.styleFrom(
-                              side: BorderSide(
-                                color: _isTalkedForCurrentTree(tree)
-                                    ? softBorder
-                                    : softBorder,
-                                width: 1.4,
-                              ),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(30),
-                              ),
+                              enabled: !_isHeldForCurrentTree(tree),
+                              onPressed: _isHeldForCurrentTree(tree) ? null : _holdGently,
                               backgroundColor: softAccent,
+                              borderColor: softBorder,
+                              iconColor: accentText,
                             ),
-                            child: Text(
-                              _isTalkedForCurrentTree(tree)
+                            const SizedBox(width: 14),
+                            _CompactCircleActionButton(
+                              icon: Icons.chat_bubble_outline_rounded,
+                              tooltip: _isTalkedForCurrentTree(tree)
                                   ? 'You spoke to it today'
                                   : 'Say something',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w700,
-                                color: _isTalkedForCurrentTree(tree)
-                                    ? accentText.withValues(alpha: 0.6)
-                                    : accentText,
-                              ),
+                              enabled: !_isTalkedForCurrentTree(tree),
+                              onPressed: _isTalkedForCurrentTree(tree)
+                                  ? null
+                                  : _saySomething,
+                              backgroundColor: softAccent,
+                              borderColor: softBorder,
+                              iconColor: accentText,
                             ),
-                          ),
+                          ],
                         ),
                       ] else
                         SizedBox(
                           width: double.infinity,
-                          height: 62,
+                          height: 56,
                           child: ElevatedButton(
                             onPressed: _watering ? null : _waterToday,
                             style: ElevatedButton.styleFrom(
@@ -1700,18 +1577,20 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                               ),
                             ),
                             child: Text(
-                              _waterButtonOverride ?? 'Water today',
+                              _waterButtonOverride ?? 'Done today',
                               style: const TextStyle(
-                                fontSize: 18,
+                                fontSize: 17,
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
                           ),
                         ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 8),
                   ],
                 ),
               ),
+                            ),
+                          ),
                         ),
                       );
                     },
@@ -1817,16 +1696,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       return TreePageVisualState.completed;
     }
     return TreePageVisualState.growing;
-  }
-
-  Color _statusTitleColor(TreePageVisualState state) {
-    return switch (state) {
-      TreePageVisualState.dead => const Color(0xFF4A5B52),
-      TreePageVisualState.wilting => const Color(0xFF606D56),
-      TreePageVisualState.thirsty => const Color(0xFF3D5E52),
-      TreePageVisualState.soothed => const Color(0xFF355D4F),
-      _ => const Color(0xFF2E5449),
-    };
   }
 
   Color _streakColor(TreePageVisualState state) {
@@ -3407,6 +3276,54 @@ class _DeadMemoryPill extends StatelessWidget {
             fontSize: 13,
             fontWeight: FontWeight.w600,
             color: Color(0xFF607365),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CompactCircleActionButton extends StatelessWidget {
+  const _CompactCircleActionButton({
+    required this.icon,
+    required this.tooltip,
+    required this.enabled,
+    required this.onPressed,
+    required this.backgroundColor,
+    required this.borderColor,
+    required this.iconColor,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final bool enabled;
+  final VoidCallback? onPressed;
+  final Color backgroundColor;
+  final Color borderColor;
+  final Color iconColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: enabled ? onPressed : null,
+          borderRadius: BorderRadius.circular(999),
+          child: Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              color: backgroundColor,
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: borderColor, width: 1.2),
+            ),
+            child: Icon(
+              icon,
+              size: 20,
+              color: enabled ? iconColor : iconColor.withValues(alpha: 0.45),
+            ),
           ),
         ),
       ),
