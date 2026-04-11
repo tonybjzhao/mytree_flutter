@@ -1210,6 +1210,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                                           tree: tree,
                                           visualState: visualState,
                                           isNight: isNight,
+                                          swayT: _swayController.value,
                                         ),
                                       ),
                                     ),
@@ -1798,12 +1799,14 @@ class TreeView extends StatelessWidget {
   final TreeModel tree;
   final TreePageVisualState visualState;
   final bool isNight;
+  final double swayT;
 
   const TreeView({
     super.key,
     required this.tree,
     required this.visualState,
     required this.isNight,
+    required this.swayT,
   });
 
   @override
@@ -1836,6 +1839,10 @@ class TreeView extends StatelessWidget {
         isNight && visualState != TreePageVisualState.dead ? 11.0 : 0.0;
     final sleepTilt =
         isNight && visualState != TreePageVisualState.dead ? -0.056 : 0.0;
+    final moonDriftX = math.sin(swayT * math.pi * 2) * 1.4;
+    final moonDriftY = math.cos(swayT * math.pi * 2) * 1.0;
+    final moonOpacity =
+      (0.26 + (math.sin(swayT * math.pi * 2) * 0.08)).clamp(0.18, 0.36);
 
     return SizedBox(
       width: 260,
@@ -1877,12 +1884,18 @@ class TreeView extends StatelessWidget {
           ),
           if (isNight && visualState != TreePageVisualState.dead)
             Positioned(
-              top: 46,
-              right: 54,
-              child: Icon(
-                Icons.nightlight_round,
-                size: 18,
-                color: palette.leaf.withValues(alpha: 0.32),
+              top: 20,
+              right: 30,
+              child: Opacity(
+                opacity: moonOpacity,
+                child: Transform.translate(
+                  offset: Offset(moonDriftX, moonDriftY),
+                  child: Icon(
+                    Icons.nightlight_round,
+                    size: 18,
+                    color: palette.leaf.withValues(alpha: 0.5),
+                  ),
+                ),
               ),
             ),
         ],
@@ -2344,9 +2357,9 @@ class _AmbientGardenBackdrop extends StatelessWidget {
           ),
           if (isNight) ...const [
             _MoonHalo(),
-            _BackdropStar(alignment: Alignment(0.64, -0.78), size: 6),
-            _BackdropStar(alignment: Alignment(0.84, -0.62), size: 4),
-            _BackdropStar(alignment: Alignment(0.48, -0.56), size: 5),
+            _BackdropStar(alignment: Alignment(0.74, -0.84), size: 6, phase: 0.1),
+            _BackdropStar(alignment: Alignment(0.90, -0.72), size: 4, phase: 0.45),
+            _BackdropStar(alignment: Alignment(0.58, -0.68), size: 5, phase: 0.78),
           ],
         ],
       ),
@@ -2354,35 +2367,116 @@ class _AmbientGardenBackdrop extends StatelessWidget {
   }
 }
 
-class _MoonHalo extends StatelessWidget {
+class _MoonHalo extends StatefulWidget {
   const _MoonHalo();
 
   @override
+  State<_MoonHalo> createState() => _MoonHaloState();
+}
+
+class _MoonHaloState extends State<_MoonHalo>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _driftController;
+
+  @override
+  void initState() {
+    super.initState();
+    _driftController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 7000),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _driftController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return const Align(
-      alignment: Alignment(0.78, -0.82),
-      child: Icon(
+    return AnimatedBuilder(
+      animation: _driftController,
+      builder: (context, child) {
+        final t = _driftController.value;
+        final driftX = math.sin(t * math.pi * 2) * 1.2;
+        final driftY = math.cos(t * math.pi * 2) * 1.6;
+        final opacity = (0.34 + (math.sin(t * math.pi * 2) * 0.08))
+            .clamp(0.24, 0.42);
+
+        return Align(
+          alignment: const Alignment(0.9, -0.9),
+          child: Opacity(
+            opacity: opacity,
+            child: Transform.translate(
+              offset: Offset(driftX, driftY),
+              child: child,
+            ),
+          ),
+        );
+      },
+      child: const Icon(
         Icons.brightness_2_rounded,
         size: 32,
-        color: Color(0x66A9B5C1),
+        color: Color(0xFFA9B5C1),
       ),
     );
   }
 }
 
-class _BackdropStar extends StatelessWidget {
-  const _BackdropStar({required this.alignment, required this.size});
+class _BackdropStar extends StatefulWidget {
+  const _BackdropStar({
+    required this.alignment,
+    required this.size,
+    required this.phase,
+  });
 
   final Alignment alignment;
   final double size;
 
+  // phase is a normalized [0..1] offset so stars twinkle out-of-sync.
+  final double phase;
+
+  @override
+  State<_BackdropStar> createState() => _BackdropStarState();
+}
+
+class _BackdropStarState extends State<_BackdropStar>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _twinkleController;
+
+  @override
+  void initState() {
+    super.initState();
+    _twinkleController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 6200),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _twinkleController.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Align(
-      alignment: alignment,
+    return AnimatedBuilder(
+      animation: _twinkleController,
+      builder: (context, child) {
+        final t = (_twinkleController.value + widget.phase) % 1.0;
+        final opacity = (0.34 + (math.sin(t * math.pi * 2) * 0.14))
+            .clamp(0.2, 0.52);
+
+        return Align(
+          alignment: widget.alignment,
+          child: Opacity(opacity: opacity, child: child),
+        );
+      },
       child: Container(
-        width: size,
-        height: size,
+        width: widget.size,
+        height: widget.size,
         decoration: const BoxDecoration(
           color: Color(0x55EDF6FF),
           shape: BoxShape.circle,
