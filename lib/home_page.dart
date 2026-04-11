@@ -14,6 +14,8 @@ import 'tree_slot_icon.dart';
 import 'tree_model.dart';
 import 'tree_service.dart';
 
+enum TreePageVisualState { growing, completed, soothed, thirsty, wilting, dead }
+
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
@@ -483,6 +485,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   @override
   Widget build(BuildContext context) {
     final tree = _collection?.currentTree;
+    final visualState = tree == null
+        ? TreePageVisualState.growing
+        : _visualStateFor(tree);
 
     return Scaffold(
       body: SafeArea(
@@ -696,7 +701,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                                       scale: 1.4 * _pulseAnimation.value,
                                       child: Transform.rotate(
                                         angle: _treeSwayAngle(tree),
-                                        child: TreeView(tree: tree),
+                                        child: TreeView(
+                                          tree: tree,
+                                          visualState: visualState,
+                                        ),
                                       ),
                                     ),
                                   ),
@@ -710,10 +718,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                     const SizedBox(height: 12),
                     Text(
                       _statusTitle(tree),
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w700,
-                        color: Color(0xFF2E5449),
+                        color: _statusTitleColor(visualState),
                       ),
                     ),
                     const SizedBox(height: 6),
@@ -723,18 +731,16 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                             : _streakLabel(tree.streakDays),
                       style: TextStyle(
                         fontSize: 17,
-                        color: tree.healthState == TreeHealthState.dead
-                                ? const Color(0xFF6D756F)
-                                : const Color(0xFF66756D),
+                        color: _streakColor(visualState),
                       ),
                     ),
                     const SizedBox(height: 6),
                     Text(
                       _supportLine(tree),
                       textAlign: TextAlign.center,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 13,
-                        color: Color(0xFF7B8A83),
+                        color: _supportColor(visualState),
                       ),
                     ),
                     const SizedBox(height: 18),
@@ -877,7 +883,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   double _treeSwayAngle(TreeModel tree) {
-    if (tree.healthState == TreeHealthState.dead) return 0;
+    final visualState = _visualStateFor(tree);
+    if (visualState == TreePageVisualState.dead) return 0;
     final t = _swayController.value;
     final amplitude = switch (tree.growthStage) {
       TreeGrowthStage.seed => 0.015,
@@ -886,21 +893,72 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       TreeGrowthStage.young => 0.02,
       TreeGrowthStage.mature => 0.015,
     };
-    return math.sin(t * math.pi * 2) * amplitude;
+    final stateFactor = switch (visualState) {
+      TreePageVisualState.wilting => 0.5,
+      TreePageVisualState.thirsty => 0.75,
+      _ => 1.0,
+    };
+    return math.sin(t * math.pi * 2) * amplitude * stateFactor;
+  }
+
+  TreePageVisualState _visualStateFor(TreeModel tree) {
+    if (tree.healthState == TreeHealthState.dead) {
+      return TreePageVisualState.dead;
+    }
+    if (tree.healthState == TreeHealthState.wilting) {
+      return TreePageVisualState.wilting;
+    }
+    if (tree.healthState == TreeHealthState.thirsty) {
+      return TreePageVisualState.thirsty;
+    }
+    if (_isHeldForCurrentTree(tree)) {
+      return TreePageVisualState.soothed;
+    }
+    if (tree.hasWateredToday) {
+      return TreePageVisualState.completed;
+    }
+    return TreePageVisualState.growing;
+  }
+
+  Color _statusTitleColor(TreePageVisualState state) {
+    return switch (state) {
+      TreePageVisualState.dead => const Color(0xFF4A5B52),
+      TreePageVisualState.wilting => const Color(0xFF606D56),
+      TreePageVisualState.thirsty => const Color(0xFF3D5E52),
+      TreePageVisualState.soothed => const Color(0xFF355D4F),
+      _ => const Color(0xFF2E5449),
+    };
+  }
+
+  Color _streakColor(TreePageVisualState state) {
+    return switch (state) {
+      TreePageVisualState.dead => const Color(0xFF6D756F),
+      TreePageVisualState.wilting => const Color(0xFF7A7A62),
+      TreePageVisualState.thirsty => const Color(0xFF6E776B),
+      TreePageVisualState.soothed => const Color(0xFF5D7468),
+      _ => const Color(0xFF66756D),
+    };
+  }
+
+  Color _supportColor(TreePageVisualState state) {
+    return switch (state) {
+      TreePageVisualState.dead => const Color(0xFF7F8B84),
+      TreePageVisualState.wilting => const Color(0xFF89866E),
+      TreePageVisualState.thirsty => const Color(0xFF7D8A83),
+      TreePageVisualState.soothed => const Color(0xFF72857C),
+      _ => const Color(0xFF7B8A83),
+    };
   }
 
   String _statusTitle(TreeModel tree) {
-    switch (tree.healthState) {
-      case TreeHealthState.healthy:
-        if (_isHeldForCurrentTree(tree)) return 'It feels calm and cared for';
-        return tree.hasWateredToday ? 'Held gently today' : 'Quietly growing';
-      case TreeHealthState.thirsty:
-        return 'A little thirsty';
-      case TreeHealthState.wilting:
-        return 'Still waiting for you';
-      case TreeHealthState.dead:
-        return 'This tree has withered';
-    }
+    return switch (_visualStateFor(tree)) {
+      TreePageVisualState.growing => 'Quietly growing',
+      TreePageVisualState.completed => 'Held gently today',
+      TreePageVisualState.soothed => 'It feels calm and cared for',
+      TreePageVisualState.thirsty => 'A little thirsty',
+      TreePageVisualState.wilting => 'Still waiting for you',
+      TreePageVisualState.dead => 'This tree has withered',
+    };
   }
 
   String _supportLine(TreeModel tree) {
@@ -911,21 +969,14 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       LifeCategory.rest => 'Care for stillness and recovery.',
     };
 
-    switch (tree.healthState) {
-      case TreeHealthState.healthy:
-        if (_isHeldForCurrentTree(tree)) {
-          return 'Come back tomorrow. Something small may change.';
-        }
-        return tree.hasWateredToday
-            ? 'One more gentle action is available today.'
-            : categoryLine;
-      case TreeHealthState.thirsty:
-        return '${tree.category.title} needs a gentle return today.';
-      case TreeHealthState.wilting:
-        return 'Come back soon. ${tree.category.title} can still recover.';
-      case TreeHealthState.dead:
-        return 'A new start can help it grow again.';
-    }
+    return switch (_visualStateFor(tree)) {
+      TreePageVisualState.growing => categoryLine,
+      TreePageVisualState.completed => 'One more gentle action is available today.',
+      TreePageVisualState.soothed => 'Come back tomorrow. Something small may change.',
+      TreePageVisualState.thirsty => '${tree.category.title} needs a gentle return today.',
+      TreePageVisualState.wilting => 'Come back soon. ${tree.category.title} can still recover.',
+      TreePageVisualState.dead => 'A new start can help it grow again.',
+    };
   }
 
   String _streakLabel(int streak) {
@@ -1044,12 +1095,17 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
 class TreeView extends StatelessWidget {
   final TreeModel tree;
+  final TreePageVisualState visualState;
 
-  const TreeView({super.key, required this.tree});
+  const TreeView({
+    super.key,
+    required this.tree,
+    required this.visualState,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final palette = _paletteFor(tree.healthState);
+    final palette = _paletteFor(visualState);
     final variation = _TreeVariation.fromSeed(tree.createdAtIso);
 
     return SizedBox(
@@ -1096,7 +1152,7 @@ class TreeView extends StatelessWidget {
     final leafTilt = variation.leafTiltRadians;
     final stemHeightFactor = variation.stemHeightFactor;
 
-    if (tree.healthState == TreeHealthState.dead) {
+    if (visualState == TreePageVisualState.dead) {
       return Transform.rotate(
         angle: -0.12,
         child: SizedBox(
@@ -1480,30 +1536,32 @@ class TreeView extends StatelessWidget {
     }
   }
 
-  _TreePalette _paletteFor(TreeHealthState state) {
+  _TreePalette _paletteFor(TreePageVisualState state) {
     switch (state) {
-      case TreeHealthState.healthy:
+      case TreePageVisualState.growing:
+      case TreePageVisualState.completed:
+      case TreePageVisualState.soothed:
         return const _TreePalette(
           leaf: Color(0xFF63B66A),
           trunk: Color(0xFF6B4B3E),
           soil: Color(0xFF846258),
           ground: Color(0xFFDDE9DD),
         );
-      case TreeHealthState.thirsty:
+      case TreePageVisualState.thirsty:
         return const _TreePalette(
           leaf: Color(0xFF9CB86A),
           trunk: Color(0xFF6B4B3E),
           soil: Color(0xFF8B6A5F),
           ground: Color(0xFFE2E7D9),
         );
-      case TreeHealthState.wilting:
+      case TreePageVisualState.wilting:
         return const _TreePalette(
           leaf: Color(0xFFC0A85E),
           trunk: Color(0xFF705045),
           soil: Color(0xFF8E6E63),
           ground: Color(0xFFE9E0D1),
         );
-      case TreeHealthState.dead:
+      case TreePageVisualState.dead:
         return const _TreePalette(
           leaf: Color(0xFF9D9488),
           trunk: Color(0xFF6E615A),
