@@ -633,6 +633,20 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     });
   }
 
+  Future<void> _resetPremiumForDebug() async {
+    await _premiumService.resetPremiumForDebug();
+    await _analyticsService.logEvent(
+      'debug_reset_premium_entitlement',
+      params: {'variant': _revivePaywallVariant.code},
+    );
+    await _load();
+    if (!mounted) return;
+    setState(() {
+      _debugStateLine = 'debug premium reset | premium=false';
+    });
+    _showToastMessage('Premium reset for debug.');
+  }
+
   String _formatDateOnly(DateTime dt) {
     final y = dt.year.toString().padLeft(4, '0');
     final m = dt.month.toString().padLeft(2, '0');
@@ -1120,6 +1134,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                           onChanged: _refreshAndLogDebugState,
                           onSetPaywallVariant: _setDebugPaywallVariant,
                           onResetPaywallVariant: _resetDebugPaywallVariant,
+                          onResetPremiumForDebug: _resetPremiumForDebug,
                         ),
                       ),
                     if (kDebugMode && _debugStateLine != null)
@@ -1906,11 +1921,13 @@ class _DebugTimeTravelPanel extends StatelessWidget {
     required this.onChanged,
     required this.onSetPaywallVariant,
     required this.onResetPaywallVariant,
+    required this.onResetPremiumForDebug,
   });
 
   final Future<void> Function(String action) onChanged;
   final Future<void> Function(PaywallVariant variant) onSetPaywallVariant;
   final Future<void> Function() onResetPaywallVariant;
+  final Future<void> Function() onResetPremiumForDebug;
 
   @override
   Widget build(BuildContext context) {
@@ -2025,6 +2042,9 @@ class _DebugTimeTravelPanel extends StatelessWidget {
               }),
               _chip(context, 'Var Reset', () async {
                 await onResetPaywallVariant();
+              }),
+              _chip(context, 'Premium Reset', () async {
+                await onResetPremiumForDebug();
               }),
             ],
           ),
