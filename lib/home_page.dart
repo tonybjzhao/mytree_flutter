@@ -1475,7 +1475,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                                       );
                                     },
                                     child: Transform.translate(
-                                      offset: Offset(0, deadFloatY),
+                                      offset: Offset(
+                                        0,
+                                        deadFloatY + _treeBobOffsetY(tree),
+                                      ),
                                       child: Transform.scale(
                                         key: ValueKey(
                                           '${_collection!.currentIndex}-${tree.streakDays}-${tree.healthState.name}',
@@ -1738,14 +1741,51 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     return _categoryMotionWave(tree.category, t) * amplitude * stateFactor;
   }
 
-  double _categoryMotionWave(LifeCategory category, double t) {
-    final base = math.sin(t * math.pi * 2);
-    return switch (category) {
-      LifeCategory.health => base,
+  double _treeBobOffsetY(TreeModel tree) {
+    final visualState = _visualStateFor(tree);
+    if (visualState == TreePageVisualState.dead) return 0;
+
+    final t = _swayController.value;
+    final baseAmplitude = switch (tree.growthStage) {
+      TreeGrowthStage.seed => 1.2,
+      TreeGrowthStage.sprout => 1.4,
+      TreeGrowthStage.small => 1.6,
+      TreeGrowthStage.young => 1.8,
+      TreeGrowthStage.mature => 2.0,
+    } * (_isNightTime ? 0.55 : 1.0);
+
+    final wave = switch (tree.category) {
+      LifeCategory.health => math.sin((t + 0.03) * math.pi * 2 * 1.10),
       LifeCategory.family =>
-        (base * 0.70) + (math.sin((t + 0.08) * math.pi * 2) * 0.14),
-      LifeCategory.work => math.sin(t * math.pi * 2.35) * 0.72,
-      LifeCategory.rest => math.sin(t * math.pi * 1.35) * 0.64,
+        (math.sin((t + 0.10) * math.pi * 2 * 0.88) * 0.82) +
+        (math.sin((t + 0.22) * math.pi * 2 * 1.55) * 0.24),
+      LifeCategory.work => math.sin((t + 0.01) * math.pi * 2 * 1.95) * 0.62,
+      LifeCategory.rest => math.sin((t + 0.16) * math.pi * 2 * 0.68) * 1.08,
+    };
+
+    final stateFactor = switch (visualState) {
+      TreePageVisualState.wilting => 0.45,
+      TreePageVisualState.thirsty => 0.68,
+      _ => 1.0,
+    };
+
+    return -(wave * baseAmplitude * stateFactor);
+  }
+
+  double _categoryMotionWave(LifeCategory category, double t) {
+    return switch (category) {
+      LifeCategory.health =>
+        (math.sin(t * math.pi * 2 * 1.18) * 0.86) +
+        (math.sin((t + 0.12) * math.pi * 2 * 2.1) * 0.16),
+      LifeCategory.family =>
+        (math.sin((t + 0.08) * math.pi * 2 * 0.92) * 0.76) +
+        (math.sin((t + 0.24) * math.pi * 2 * 1.72) * 0.22),
+      LifeCategory.work =>
+        (math.sin((t + 0.02) * math.pi * 2 * 2.45) * 0.62) +
+        (math.sin((t + 0.28) * math.pi * 2 * 3.6) * 0.1),
+      LifeCategory.rest =>
+        (math.sin((t + 0.14) * math.pi * 2 * 0.74) * 0.9) +
+        (math.sin((t + 0.32) * math.pi * 2 * 1.3) * 0.12),
     };
   }
 
@@ -2205,8 +2245,24 @@ class TreeView extends StatelessWidget {
               width: groundWidth,
               height: 36,
               decoration: BoxDecoration(
-                color: palette.ground,
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Color.lerp(palette.ground, Colors.white, 0.12) ??
+                        palette.ground,
+                    Color.lerp(palette.ground, Colors.black, 0.08) ??
+                        palette.ground,
+                  ],
+                ),
                 borderRadius: BorderRadius.circular(999),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.08),
+                    blurRadius: 12,
+                    offset: const Offset(0, 6),
+                  ),
+                ],
               ),
             ),
           ),
@@ -2216,8 +2272,19 @@ class TreeView extends StatelessWidget {
               width: soilWidth,
               height: 30,
               decoration: BoxDecoration(
-                color: palette.soil,
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Color.lerp(palette.soil, Colors.white, 0.1) ?? palette.soil,
+                    Color.lerp(palette.soil, Colors.black, 0.12) ?? palette.soil,
+                  ],
+                ),
                 borderRadius: BorderRadius.circular(999),
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.16),
+                  width: 0.6,
+                ),
               ),
             ),
           ),
@@ -2260,8 +2327,43 @@ class TreeView extends StatelessWidget {
     final leafTilt = variation.leafTiltRadians;
     final stemHeightFactor = variation.stemHeightFactor;
     final canopyWidthFactor = style.canopyWidthFactor;
+    final canopyHeightFactor = style.canopyHeightFactor;
     final topLift = style.topLift;
     final sideOffset = style.sideOffset;
+    final trunkLean = style.trunkLean;
+    final branchReach = style.branchReach;
+    final leafTop = Color.lerp(palette.leaf, Colors.white, 0.18) ?? palette.leaf;
+    final leafBottom = Color.lerp(palette.leaf, Colors.black, 0.12) ?? palette.leaf;
+    final trunkTop = Color.lerp(palette.trunk, Colors.white, 0.10) ?? palette.trunk;
+    final trunkBottom = Color.lerp(palette.trunk, Colors.black, 0.16) ?? palette.trunk;
+
+    double canopyW(double base) => base * canopyWidthFactor;
+    double canopyH(double base) => base * canopyHeightFactor;
+
+    BoxDecoration leafDecoration(double radius, {double alpha = 1}) {
+      return BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            leafTop.withValues(alpha: alpha),
+            leafBottom.withValues(alpha: alpha),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(radius),
+      );
+    }
+
+    BoxDecoration trunkDecoration(double radius) {
+      return BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [trunkTop, trunkBottom],
+        ),
+        borderRadius: BorderRadius.circular(radius),
+      );
+    }
 
     if (visualState == TreePageVisualState.dead) {
       return Transform.rotate(
@@ -2277,30 +2379,48 @@ class TreeView extends StatelessWidget {
     switch (tree.growthStage) {
       case TreeGrowthStage.seed:
         return SizedBox(
-          width: 76,
-          height: 104,
+          width: 84,
+          height: 112,
           child: Stack(
             alignment: Alignment.bottomCenter,
             children: [
               Container(
-                width: 14,
-                height: 62 * stemHeightFactor,
-                decoration: BoxDecoration(
-                  color: palette.trunk,
-                  borderRadius: BorderRadius.circular(12),
-                ),
+                width: 12,
+                height: 60 * stemHeightFactor,
+                decoration: trunkDecoration(12),
               ),
               Positioned(
-                top: 8 + topLift,
+                top: 26 + topLift,
+                left: 14 + sideOffset,
                 child: Transform.rotate(
                   angle: -0.38 + leafTilt,
                   child: Container(
-                    width: 34 * canopyWidthFactor,
-                    height: 20,
-                    decoration: BoxDecoration(
-                      color: palette.leaf,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
+                    width: canopyW(32),
+                    height: canopyH(16),
+                    decoration: leafDecoration(20),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 22 + topLift,
+                right: 14 - sideOffset,
+                child: Transform.rotate(
+                  angle: 0.42 + leafTilt * 0.9,
+                  child: Container(
+                    width: canopyW(34),
+                    height: canopyH(17),
+                    decoration: leafDecoration(20),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 16 + topLift,
+                child: Transform.rotate(
+                  angle: leafTilt * 0.45,
+                  child: Container(
+                    width: canopyW(14),
+                    height: canopyH(12),
+                    decoration: leafDecoration(12, alpha: 0.94),
                   ),
                 ),
               ),
@@ -2310,46 +2430,51 @@ class TreeView extends StatelessWidget {
 
       case TreeGrowthStage.sprout:
         return SizedBox(
-          width: 96,
-          height: 126,
+          width: 108,
+          height: 136,
           child: Stack(
             alignment: Alignment.bottomCenter,
             children: [
-              Container(
-                width: 16,
-                height: 74 * stemHeightFactor,
-                decoration: BoxDecoration(
-                  color: palette.trunk,
-                  borderRadius: BorderRadius.circular(12),
+              Transform.rotate(
+                angle: -0.03 + trunkLean,
+                child: Container(
+                  width: 15,
+                  height: 78 * stemHeightFactor,
+                  decoration: trunkDecoration(12),
                 ),
               ),
               Positioned(
-                top: 16 + topLift,
+                top: 28 + topLift,
                 left: 10 + sideOffset,
                 child: Transform.rotate(
                   angle: -0.5 + leafTilt,
                   child: Container(
-                    width: 34 * canopyWidthFactor,
-                    height: 20,
-                    decoration: BoxDecoration(
-                      color: palette.leaf,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
+                    width: canopyW(38),
+                    height: canopyH(20),
+                    decoration: leafDecoration(22),
                   ),
                 ),
               ),
               Positioned(
-                top: 10 + topLift,
+                top: 22 + topLift,
                 right: 10 - sideOffset,
                 child: Transform.rotate(
                   angle: 0.55 + leafTilt,
                   child: Container(
-                    width: 36 * canopyWidthFactor,
-                    height: 20,
-                    decoration: BoxDecoration(
-                      color: palette.leaf,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
+                    width: canopyW(40),
+                    height: canopyH(20),
+                    decoration: leafDecoration(22),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 14 + topLift,
+                child: Transform.rotate(
+                  angle: leafTilt * 0.45,
+                  child: Container(
+                    width: canopyW(28),
+                    height: canopyH(18),
+                    decoration: leafDecoration(18, alpha: 0.95),
                   ),
                 ),
               ),
@@ -2359,60 +2484,104 @@ class TreeView extends StatelessWidget {
 
       case TreeGrowthStage.small:
         return SizedBox(
-          width: 138,
-          height: 162,
+          width: 150,
+          height: 174,
           child: Stack(
             alignment: Alignment.bottomCenter,
             children: [
-              Container(
-                width: 20,
-                height: 88 * stemHeightFactor,
-                decoration: BoxDecoration(
-                  color: palette.trunk,
-                  borderRadius: BorderRadius.circular(12),
+              Transform.rotate(
+                angle: -0.04 + trunkLean,
+                child: Container(
+                  width: 20,
+                  height: 92 * stemHeightFactor,
+                  decoration: trunkDecoration(13),
                 ),
               ),
               Positioned(
-                top: 18 + topLift,
+                top: 26 + topLift,
                 child: Transform.rotate(
                   angle: leafTilt * 0.55,
                   child: Container(
-                    width: 92 * canopyWidthFactor,
-                    height: 54,
-                    decoration: BoxDecoration(
-                      color: palette.leaf,
-                      borderRadius: BorderRadius.circular(40),
-                    ),
-                  ),
-                ),
-              ),
-              Positioned(
-                top: 4 + topLift,
-                left: 20 + sideOffset,
-                child: Transform.rotate(
-                  angle: leafTilt,
-                  child: Container(
-                    width: 52 * canopyWidthFactor,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: palette.leaf.withValues(alpha: 0.94),
-                      borderRadius: BorderRadius.circular(28),
-                    ),
+                    width: canopyW(102),
+                    height: canopyH(58),
+                    decoration: leafDecoration(42),
                   ),
                 ),
               ),
               Positioned(
                 top: 8 + topLift,
+                left: 20 + sideOffset,
+                child: Transform.rotate(
+                  angle: leafTilt,
+                  child: Container(
+                    width: canopyW(56),
+                    height: canopyH(42),
+                    decoration: leafDecoration(30, alpha: 0.94),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 10 + topLift,
                 right: 16 - sideOffset,
                 child: Transform.rotate(
                   angle: leafTilt * 0.8,
                   child: Container(
-                    width: 46 * canopyWidthFactor,
-                    height: 34,
+                    width: canopyW(52),
+                    height: canopyH(36),
+                    decoration: leafDecoration(26, alpha: 0.92),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 0 + topLift,
+                child: Transform.rotate(
+                  angle: leafTilt * 0.32,
+                  child: Container(
+                    width: canopyW(44),
+                    height: canopyH(28),
+                    decoration: leafDecoration(22, alpha: 0.9),
+                  ),
+                ),
+              ),
+              Positioned(
+                bottom: 74,
+                left: 28 + sideOffset,
+                child: Transform.rotate(
+                  angle: -0.65 + trunkLean,
+                  child: Container(
+                    width: 14 + branchReach,
+                    height: 5,
                     decoration: BoxDecoration(
-                      color: palette.leaf.withValues(alpha: 0.92),
-                      borderRadius: BorderRadius.circular(24),
+                      color: trunkBottom.withValues(alpha: 0.72),
+                      borderRadius: BorderRadius.circular(99),
                     ),
+                  ),
+                ),
+              ),
+              Positioned(
+                bottom: 68,
+                right: 30 - sideOffset,
+                child: Transform.rotate(
+                  angle: 0.62 + trunkLean,
+                  child: Container(
+                    width: 13 + branchReach,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: trunkBottom.withValues(alpha: 0.68),
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 16 + topLift,
+                left: 46 + sideOffset,
+                child: Container(
+                  width: 24,
+                  height: 9,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.11),
+                    borderRadius: BorderRadius.circular(999),
                   ),
                 ),
               ),
@@ -2422,74 +2591,104 @@ class TreeView extends StatelessWidget {
 
       case TreeGrowthStage.young:
         return SizedBox(
-          width: 162,
-          height: 190,
+          width: 174,
+          height: 198,
           child: Stack(
             alignment: Alignment.bottomCenter,
             children: [
-              Container(
-                width: 28,
-                height: 102 * stemHeightFactor,
-                decoration: BoxDecoration(
-                  color: palette.trunk,
-                  borderRadius: BorderRadius.circular(14),
+              Transform.rotate(
+                angle: -0.03 + trunkLean,
+                child: Container(
+                  width: 28,
+                  height: 108 * stemHeightFactor,
+                  decoration: trunkDecoration(14),
                 ),
               ),
               Positioned(
-                top: 42 + topLift,
+                top: 48 + topLift,
                 child: Transform.rotate(
                   angle: leafTilt * 0.45,
                   child: Container(
-                    width: 116 * canopyWidthFactor,
-                    height: 70,
-                    decoration: BoxDecoration(
-                      color: palette.leaf,
-                      borderRadius: BorderRadius.circular(50),
-                    ),
+                    width: canopyW(124),
+                    height: canopyH(74),
+                    decoration: leafDecoration(52),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 14 + topLift,
+                left: 26 + sideOffset,
+                child: Transform.rotate(
+                  angle: leafTilt,
+                  child: Container(
+                    width: canopyW(58),
+                    height: canopyH(50),
+                    decoration: leafDecoration(30, alpha: 0.92),
                   ),
                 ),
               ),
               Positioned(
                 top: 10 + topLift,
-                left: 26 + sideOffset,
-                child: Transform.rotate(
-                  angle: leafTilt,
-                  child: Container(
-                    width: 54 * canopyWidthFactor,
-                    height: 48,
-                    decoration: BoxDecoration(
-                      color: palette.leaf.withValues(alpha: 0.92),
-                      borderRadius: BorderRadius.circular(28),
-                    ),
-                  ),
-                ),
-              ),
-              Positioned(
-                top: 8 + topLift,
                 right: 22 - sideOffset,
                 child: Transform.rotate(
                   angle: leafTilt * 0.8,
                   child: Container(
-                    width: 56 * canopyWidthFactor,
-                    height: 48,
+                    width: canopyW(60),
+                    height: canopyH(50),
+                    decoration: leafDecoration(30, alpha: 0.92),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 0 + topLift,
+                child: Transform.rotate(
+                  angle: leafTilt * 0.35,
+                  child: Container(
+                    width: canopyW(74),
+                    height: canopyH(50),
+                    decoration: leafDecoration(32, alpha: 0.95),
+                  ),
+                ),
+              ),
+              Positioned(
+                bottom: 88,
+                left: 42 + sideOffset,
+                child: Transform.rotate(
+                  angle: -0.66 + trunkLean,
+                  child: Container(
+                    width: 18 + branchReach,
+                    height: 6,
                     decoration: BoxDecoration(
-                      color: palette.leaf.withValues(alpha: 0.92),
-                      borderRadius: BorderRadius.circular(26),
+                      color: trunkBottom.withValues(alpha: 0.72),
+                      borderRadius: BorderRadius.circular(99),
                     ),
                   ),
                 ),
               ),
               Positioned(
-                top: topLift,
+                bottom: 82,
+                right: 44 - sideOffset,
                 child: Transform.rotate(
-                  angle: leafTilt * 0.35,
+                  angle: 0.58 + trunkLean,
                   child: Container(
-                    width: 68 * canopyWidthFactor,
-                    height: 48,
+                    width: 16 + branchReach,
+                    height: 6,
                     decoration: BoxDecoration(
-                      color: palette.leaf.withValues(alpha: 0.95),
-                      borderRadius: BorderRadius.circular(30),
+                      color: trunkBottom.withValues(alpha: 0.68),
+                      borderRadius: BorderRadius.circular(99),
                     ),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 22 + topLift,
+                left: 54 + sideOffset,
+                child: Container(
+                  width: 28,
+                  height: 10,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.11),
+                    borderRadius: BorderRadius.circular(999),
                   ),
                 ),
               ),
@@ -2499,104 +2698,127 @@ class TreeView extends StatelessWidget {
 
       case TreeGrowthStage.mature:
         return SizedBox(
-          width: 192,
-          height: 220,
+          width: 206,
+          height: 232,
           child: Stack(
             alignment: Alignment.bottomCenter,
             children: [
-              Container(
-                width: 34,
-                height: 120 * stemHeightFactor,
-                decoration: BoxDecoration(
-                  color: palette.trunk,
-                  borderRadius: BorderRadius.circular(16),
+              Transform.rotate(
+                angle: -0.02 + trunkLean,
+                child: Container(
+                  width: 34,
+                  height: 126 * stemHeightFactor,
+                  decoration: trunkDecoration(16),
                 ),
               ),
               Positioned(
-                top: 54 + topLift,
+                top: 60 + topLift,
                 child: Transform.rotate(
                   angle: leafTilt * 0.4,
                   child: Container(
-                    width: 130 * canopyWidthFactor,
-                    height: 88,
-                    decoration: BoxDecoration(
-                      color: palette.leaf,
-                      borderRadius: BorderRadius.circular(60),
-                    ),
+                    width: canopyW(142),
+                    height: canopyH(94),
+                    decoration: leafDecoration(64),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 14 + topLift,
+                left: 32 + sideOffset,
+                child: Transform.rotate(
+                  angle: leafTilt,
+                  child: Container(
+                    width: canopyW(64),
+                    height: canopyH(56),
+                    decoration: leafDecoration(34, alpha: 0.94),
                   ),
                 ),
               ),
               Positioned(
                 top: 12 + topLift,
-                left: 32 + sideOffset,
-                child: Transform.rotate(
-                  angle: leafTilt,
-                  child: Container(
-                    width: 58 * canopyWidthFactor,
-                    height: 52,
-                    decoration: BoxDecoration(
-                      color: palette.leaf.withValues(alpha: 0.94),
-                      borderRadius: BorderRadius.circular(30),
-                    ),
-                  ),
-                ),
-              ),
-              Positioned(
-                top: 10 + topLift,
                 right: 30 - sideOffset,
                 child: Transform.rotate(
                   angle: leafTilt * 0.8,
                   child: Container(
-                    width: 60 * canopyWidthFactor,
-                    height: 54,
-                    decoration: BoxDecoration(
-                      color: palette.leaf.withValues(alpha: 0.94),
-                      borderRadius: BorderRadius.circular(32),
-                    ),
+                    width: canopyW(66),
+                    height: canopyH(58),
+                    decoration: leafDecoration(34, alpha: 0.94),
                   ),
                 ),
               ),
               Positioned(
-                top: 34 + topLift,
+                top: 40 + topLift,
                 left: 10 + sideOffset,
                 child: Transform.rotate(
                   angle: leafTilt * 0.55,
                   child: Container(
-                    width: 46 * canopyWidthFactor,
-                    height: 42,
-                    decoration: BoxDecoration(
-                      color: palette.leaf.withValues(alpha: 0.88),
-                      borderRadius: BorderRadius.circular(26),
-                    ),
+                    width: canopyW(50),
+                    height: canopyH(44),
+                    decoration: leafDecoration(26, alpha: 0.88),
                   ),
                 ),
               ),
               Positioned(
-                top: 38 + topLift,
+                top: 42 + topLift,
                 right: 8 - sideOffset,
                 child: Transform.rotate(
                   angle: leafTilt * 0.45,
                   child: Container(
-                    width: 44 * canopyWidthFactor,
-                    height: 40,
+                    width: canopyW(48),
+                    height: canopyH(42),
+                    decoration: leafDecoration(26, alpha: 0.88),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 0 + topLift,
+                child: Transform.rotate(
+                  angle: leafTilt * 0.3,
+                  child: Container(
+                    width: canopyW(80),
+                    height: canopyH(58),
+                    decoration: leafDecoration(34, alpha: 0.96),
+                  ),
+                ),
+              ),
+              Positioned(
+                bottom: 98,
+                left: 52 + sideOffset,
+                child: Transform.rotate(
+                  angle: -0.66 + trunkLean,
+                  child: Container(
+                    width: 20 + branchReach,
+                    height: 7,
                     decoration: BoxDecoration(
-                      color: palette.leaf.withValues(alpha: 0.88),
-                      borderRadius: BorderRadius.circular(24),
+                      color: trunkBottom.withValues(alpha: 0.72),
+                      borderRadius: BorderRadius.circular(99),
                     ),
                   ),
                 ),
               ),
               Positioned(
-                top: topLift,
+                bottom: 92,
+                right: 54 - sideOffset,
                 child: Transform.rotate(
-                  angle: leafTilt * 0.3,
+                  angle: 0.56 + trunkLean,
                   child: Container(
-                    width: 74 * canopyWidthFactor,
-                    height: 54,
+                    width: 18 + branchReach,
+                    height: 7,
                     decoration: BoxDecoration(
-                      color: palette.leaf.withValues(alpha: 0.96),
-                      borderRadius: BorderRadius.circular(32),
+                      color: trunkBottom.withValues(alpha: 0.68),
+                      borderRadius: BorderRadius.circular(99),
                     ),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 28 + topLift,
+                child: Container(
+                  width: 34,
+                  height: 12,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(999),
                   ),
                 ),
               ),
@@ -2842,8 +3064,11 @@ class _CategoryTreeStyle {
     required this.soil,
     required this.ground,
     required this.canopyWidthFactor,
+    required this.canopyHeightFactor,
     required this.topLift,
     required this.sideOffset,
+    required this.trunkLean,
+    required this.branchReach,
   });
 
   final Color leaf;
@@ -2851,8 +3076,11 @@ class _CategoryTreeStyle {
   final Color soil;
   final Color ground;
   final double canopyWidthFactor;
+  final double canopyHeightFactor;
   final double topLift;
   final double sideOffset;
+  final double trunkLean;
+  final double branchReach;
 
   factory _CategoryTreeStyle.forCategory(LifeCategory category) {
     return switch (category) {
@@ -2861,27 +3089,36 @@ class _CategoryTreeStyle {
         trunk: Color(0xFF6B4B3E),
         soil: Color(0xFF846258),
         ground: Color(0xFFDDE9DD),
-        canopyWidthFactor: 1.0,
+        canopyWidthFactor: 1.04,
+        canopyHeightFactor: 1.02,
         topLift: 0,
         sideOffset: 0,
+        trunkLean: -0.01,
+        branchReach: 1,
       ),
       LifeCategory.family => const _CategoryTreeStyle(
         leaf: Color(0xFF74B67B),
         trunk: Color(0xFF735448),
         soil: Color(0xFF8A675F),
         ground: Color(0xFFE2EBE0),
-        canopyWidthFactor: 1.08,
+        canopyWidthFactor: 1.14,
+        canopyHeightFactor: 1.08,
         topLift: -2,
         sideOffset: 4,
+        trunkLean: -0.02,
+        branchReach: 5,
       ),
       LifeCategory.work => const _CategoryTreeStyle(
         leaf: Color(0xFF5AA38A),
         trunk: Color(0xFF624840),
         soil: Color(0xFF7D635B),
         ground: Color(0xFFD8E7E1),
-        canopyWidthFactor: 0.92,
+        canopyWidthFactor: 0.88,
+        canopyHeightFactor: 0.94,
         topLift: 2,
-        sideOffset: -3,
+        sideOffset: -4,
+        trunkLean: 0.02,
+        branchReach: 0,
       ),
       LifeCategory.rest => const _CategoryTreeStyle(
         leaf: Color(0xFF7B9FB8),
@@ -2889,8 +3126,11 @@ class _CategoryTreeStyle {
         soil: Color(0xFF7A6E79),
         ground: Color(0xFFDDE3EA),
         canopyWidthFactor: 1.02,
-        topLift: -4,
+        canopyHeightFactor: 1.14,
+        topLift: -5,
         sideOffset: 1,
+        trunkLean: -0.035,
+        branchReach: 3,
       ),
     };
   }
@@ -3002,6 +3242,10 @@ class _DeadTreeShape extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final trunkTop = Color.lerp(trunkColor, Colors.white, 0.06) ?? trunkColor;
+    final trunkBottom =
+        Color.lerp(trunkColor, Colors.black, 0.22) ?? trunkColor;
+
     return SizedBox(
       width: 104,
       height: 152,
@@ -3012,7 +3256,11 @@ class _DeadTreeShape extends StatelessWidget {
             width: 16,
             height: 100 * stemHeightFactor,
             decoration: BoxDecoration(
-              color: trunkColor,
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [trunkTop, trunkBottom],
+              ),
               borderRadius: BorderRadius.circular(10),
             ),
           ),
@@ -3025,7 +3273,7 @@ class _DeadTreeShape extends StatelessWidget {
                 width: 30,
                 height: 8,
                 decoration: BoxDecoration(
-                  color: trunkColor,
+                  color: trunkBottom,
                   borderRadius: BorderRadius.circular(10),
                 ),
               ),
@@ -3040,9 +3288,35 @@ class _DeadTreeShape extends StatelessWidget {
                 width: 24,
                 height: 7,
                 decoration: BoxDecoration(
-                  color: trunkColor,
+                  color: trunkBottom,
                   borderRadius: BorderRadius.circular(10),
                 ),
+              ),
+            ),
+          ),
+          Positioned(
+            bottom: 50,
+            right: 18,
+            child: Transform.rotate(
+              angle: 1.04 + leafTilt * 0.5,
+              child: Container(
+                width: 19,
+                height: 6,
+                decoration: BoxDecoration(
+                  color: trunkBottom.withValues(alpha: 0.96),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            bottom: 38,
+            child: Container(
+              width: 1.8,
+              height: 24,
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(99),
               ),
             ),
           ),
@@ -3062,6 +3336,21 @@ class _DeadTreeShape extends StatelessWidget {
             ),
           ),
           Positioned(
+            bottom: 12,
+            left: 42,
+            child: Transform.rotate(
+              angle: -0.12,
+              child: Container(
+                width: 9,
+                height: 5,
+                decoration: BoxDecoration(
+                  color: leafColor.withValues(alpha: 0.62),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
             bottom: 6,
             right: 30,
             child: Transform.rotate(
@@ -3071,6 +3360,21 @@ class _DeadTreeShape extends StatelessWidget {
                 height: 5,
                 decoration: BoxDecoration(
                   color: leafColor.withValues(alpha: 0.7),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            bottom: 4,
+            right: 18,
+            child: Transform.rotate(
+              angle: 0.2,
+              child: Container(
+                width: 8,
+                height: 5,
+                decoration: BoxDecoration(
+                  color: leafColor.withValues(alpha: 0.55),
                   borderRadius: BorderRadius.circular(8),
                 ),
               ),
