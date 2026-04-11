@@ -66,7 +66,7 @@ class RevivePaywallSheet extends StatelessWidget {
             const Text('🥀', style: TextStyle(fontSize: 44)),
             const SizedBox(height: 12),
             const Text(
-              'Your tree is gone',
+              'Don\'t let your life wither.',
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: Colors.white,
@@ -78,8 +78,8 @@ class RevivePaywallSheet extends StatelessWidget {
             const SizedBox(height: 10),
             Text(
               streakDays > 0
-                  ? 'You stopped caring — and your $streakDays-day streak is at risk.\nBut maybe it\'s not too late.'
-                  : 'You stopped caring, and it couldn\'t survive.\nBut maybe it\'s not too late.',
+                  ? 'Each tree is part of your life.\nYour $streakDays-day streak is at risk.'
+                  : 'Each tree is part of your life.\nDon\'t stop growing.',
               textAlign: TextAlign.center,
               style: const TextStyle(
                 color: Colors.white70,
@@ -105,7 +105,7 @@ class RevivePaywallSheet extends StatelessWidget {
               onPressed: () => Navigator.of(context)
                   .pop(ReviveSheetResult.letItGo),
               style: TextButton.styleFrom(foregroundColor: Colors.white54),
-              child: const Text('Let it go', style: TextStyle(fontSize: 14)),
+              child: const Text('Maybe later', style: TextStyle(fontSize: 14)),
             ),
           ],
         ),
@@ -131,10 +131,10 @@ class RevivePaywallSheet extends StatelessWidget {
       );
     }
     return _InfoCard(
-      title: 'Save it with Premium',
+      title: 'Keep growing with Premium',
       subtitle:
-          'Revive dead trees · Grow more trees · Never lose progress again\n'
-          '\$2.99 one-time. No subscription.',
+          'Grow multiple lives · Keep every part of your life alive · Revive when it fades\n'
+          'One-time unlock. No subscription.',
       icon: Icons.workspace_premium_rounded,
       accent: const Color(0xFFFFD54F),
     );
@@ -184,7 +184,7 @@ class RevivePaywallSheet extends StatelessWidget {
           ),
         ),
         child: const Text(
-          'Unlock Premium · \$2.99 🌱',
+          'Continue Growing 🌱',
           style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
         ),
       ),

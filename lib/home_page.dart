@@ -724,30 +724,37 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       );
     }
 
+    final streak = sourceTree?.streakDays ?? 0;
     final paywallTitle = forRevive
-        ? 'You can still save it'
+        ? 'Don\'t let your life wither.'
         : 'Grow more lives';
     final paywallSubtitle = forRevive
         ? switch (_revivePaywallVariant) {
             PaywallVariant.emotional =>
-              'Premium gives your tree a second life.',
+              'Each tree is a part of your life.\nHealth · Family · Career.\nDon\'t stop growing.',
             PaywallVariant.loss =>
-              'Do not lose this tree and your streak progress.',
+              'You\'ve started something meaningful.\nDon\'t lose it now.',
             PaywallVariant.growth =>
-              'Unlock growth with revive, more trees, and progress safety.',
+              'Grow multiple lives at once and keep every part of your life alive.',
           }
         : 'Each tree holds a part of your life.';
-    final paywallEmoji = forRevive ? '🥀   🌱' : '🌱   🌿   🌳';
-    final ctaLabel = forRevive ? 'Save this tree 🌱' : 'Grow more lives 🌱';
+    final paywallEmoji = forRevive ? '🥀' : '🌱   🌿   🌳';
+    final ctaLabel = 'Continue Growing 🌱';
+    final guiltHint = streak > 0
+        ? 'You\'ve already taken care of it for $streak days.'
+        : 'You\'ve already started something meaningful.';
 
     if (!mounted) return;
 
     _paywallOpen = true;
     showModalBottomSheet<void>(
       context: context,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      backgroundColor: forRevive ? const Color(0xFF121517) : Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        side: forRevive
+            ? const BorderSide(color: Color(0x1FFFFFFF))
+            : BorderSide.none,
       ),
       builder: (sheetContext) {
         return SafeArea(
@@ -760,7 +767,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                   width: 42,
                   height: 5,
                   decoration: BoxDecoration(
-                    color: const Color(0xFFD8DED9),
+                    color: forRevive ? Colors.white24 : const Color(0xFFD8DED9),
                     borderRadius: BorderRadius.circular(999),
                   ),
                 ),
@@ -770,23 +777,41 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 Text(
                   paywallTitle,
                   textAlign: TextAlign.center,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.w700,
-                    color: Color(0xFF2E5449),
+                    color: forRevive ? Colors.white : const Color(0xFF2E5449),
                   ),
                 ),
+                if (forRevive) ...[
+                  const SizedBox(height: 8),
+                  const Text(
+                    '不要让你的生活枯萎。',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 14, color: Colors.white70),
+                  ),
+                ],
                 const SizedBox(height: 10),
                 Text(
                   paywallSubtitle,
                   textAlign: TextAlign.center,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 14,
-                    color: Color(0xFF66756D),
+                    color: forRevive ? Colors.white70 : const Color(0xFF66756D),
                     height: 1.35,
                   ),
                 ),
                 if (forRevive) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    guiltHint,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white60,
+                    ),
+                  ),
                   const SizedBox(height: 12),
                   Text(
                     'Revive available for 24 hours',
@@ -823,9 +848,14 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                             }
                           },
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF5C8D7C),
+                      backgroundColor: forRevive
+                          ? const Color(0xFF4CAF50)
+                          : const Color(0xFF5C8D7C),
                       foregroundColor: Colors.white,
                       elevation: 0,
+                      shadowColor: forRevive
+                          ? Colors.green.withValues(alpha: 0.38)
+                          : Colors.transparent,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(28),
                       ),
@@ -851,7 +881,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 const SizedBox(height: 8),
                 Text(
                   '${_iapService.premiumProduct?.price ?? r'$2.99'} one-time',
-                  style: const TextStyle(fontSize: 14, color: Color(0xFF7B8A83)),
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: forRevive ? Colors.white60 : const Color(0xFF7B8A83),
+                  ),
                 ),
                 const SizedBox(height: 12),
                 TextButton(
@@ -880,6 +913,16 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                     style: TextStyle(fontSize: 14, color: Color(0xFF5C8D7C)),
                   ),
                 ),
+                if (forRevive)
+                  TextButton(
+                    onPressed: _purchaseBusy
+                        ? null
+                        : () => Navigator.of(sheetContext).pop(),
+                    child: const Text(
+                      'Maybe later',
+                      style: TextStyle(fontSize: 14, color: Colors.white54),
+                    ),
+                  ),
               ],
             ),
           ),
