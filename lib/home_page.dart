@@ -62,6 +62,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   String? _waterButtonOverride;
   OverlayEntry? _careToastEntry;
   bool _showMilestoneBadgeGlow = false;
+  bool _showDebugPanel = false;
+  String? _debugStateLine;
   bool _heldToday = false;
   String? _heldTreeId;
   Set<String> _heldTreeIdsForDate = <String>{};
@@ -477,6 +479,35 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     return adjusted;
   }
 
+  Future<void> _refreshAndLogDebugState(String action) async {
+    await _load();
+    if (!mounted) return;
+
+    final sourceTree = _collection?.currentTree;
+    if (sourceTree == null) {
+      debugPrint('[DEBUG_PANEL] action=$action offset=${AppClock.debugDayOffset} tree=null');
+      setState(() {
+        _debugStateLine =
+            'action=$action | offset=${AppClock.debugDayOffset} | tree=null';
+      });
+      return;
+    }
+
+    final tree = _debugAdjustedTree(sourceTree);
+    debugPrint(
+      '[DEBUG_PANEL] action=$action offset=${AppClock.debugDayOffset} '
+      'missedDays=${tree.missedDays} health=${tree.healthState.name} '
+      'streak=${tree.streakDays} wateredToday=${tree.hasWateredToday}',
+    );
+
+    setState(() {
+      _debugStateLine =
+          'action=$action | offset=${AppClock.debugDayOffset} | '
+          'missed=${tree.missedDays} | health=${tree.healthState.name} | '
+          'streak=${tree.streakDays} | watered=${tree.hasWateredToday}';
+    });
+  }
+
   String _formatDateOnly(DateTime dt) {
     final y = dt.year.toString().padLeft(4, '0');
     final m = dt.month.toString().padLeft(2, '0');
@@ -809,6 +840,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     final accentText = tree == null
       ? const Color(0xFF5D706A)
       : _accentTextColor(tree.category, isNight: isNight);
+    final viewportHeight = MediaQuery.sizeOf(context).height;
+    final isSmallScreen = viewportHeight < 760;
+    final heroHeight = (viewportHeight * 0.35).clamp(210.0, 290.0);
+    final showDebugPanel = kDebugMode && (!isSmallScreen || _showDebugPanel);
 
     return Scaffold(
       backgroundColor: isNight ? const Color(0xFFF3F6F1) : const Color(0xFFF7FAF6),
@@ -826,12 +861,18 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           SafeArea(
             child: _loading || tree == null
                 ? const Center(child: CircularProgressIndicator())
-                : Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 24,
-                  vertical: 20,
-                ),
-                child: Column(
+                : LayoutBuilder(
+                    builder: (context, constraints) {
+                      return SingleChildScrollView(
+                        physics: const BouncingScrollPhysics(),
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 24,
+                              vertical: 20,
+                            ),
+                            child: Column(
                   children: [
                     const SizedBox(height: 8),
                     const Align(
@@ -853,18 +894,68 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                         currentIndex: _collection!.currentIndex,
                       ),
                     ),
-                    if (kDebugMode)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 10),
-                        child: _DebugTimeTravelPanel(
-                          onChanged: () async {
-                            await _load();
-                            if (!mounted) return;
-                            setState(() {});
+                    if (kDebugMode && isSmallScreen)
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton.icon(
+                          onPressed: () {
+                            setState(() => _showDebugPanel = !_showDebugPanel);
                           },
+                          icon: Icon(
+                            _showDebugPanel
+                                ? Icons.expand_less_rounded
+                                : Icons.tune_rounded,
+                            size: 16,
+                          ),
+                          label: Text(
+                            _showDebugPanel ? 'Hide debug' : 'Debug tools',
+                          ),
+                          style: TextButton.styleFrom(
+                            foregroundColor: const Color(0xFF5B7469),
+                            textStyle: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                            ),
+                            visualDensity: VisualDensity.compact,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                          ),
                         ),
                       ),
-                    const SizedBox(height: 14),
+                    if (showDebugPanel)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: _DebugTimeTravelPanel(
+                          onChanged: _refreshAndLogDebugState,
+                        ),
+                      ),
+                    if (kDebugMode && _debugStateLine != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 8,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFEFF5EE),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: const Color(0xFFD5E2D3)),
+                          ),
+                          child: Text(
+                            _debugStateLine!,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF4F665B),
+                            ),
+                          ),
+                        ),
+                      ),
+                    const SizedBox(height: 10),
                     Text(
                       'MyTree',
                       style: Theme.of(context).textTheme.headlineMedium
@@ -1010,9 +1101,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                           ),
                         ),
                       ),
-                    Expanded(
+                    SizedBox(
+                      height: heroHeight,
                       child: Align(
-                        alignment: const Alignment(0, -0.15),
+                        alignment: const Alignment(0, -0.2),
                         child: AnimatedBuilder(
                           animation: Listenable.merge([
                             _breatheController,
@@ -1129,7 +1221,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                         ),
                       ),
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 8),
                     Text(
                       _statusTitle(tree),
                       style: TextStyle(
@@ -1307,6 +1399,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                   ],
                 ),
               ),
+                        ),
+                      );
+                    },
+                  ),
           ),
         ],
       ),
@@ -1573,7 +1669,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 class _DebugTimeTravelPanel extends StatelessWidget {
   const _DebugTimeTravelPanel({required this.onChanged});
 
-  final Future<void> Function() onChanged;
+  final Future<void> Function(String action) onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -1603,32 +1699,32 @@ class _DebugTimeTravelPanel extends StatelessWidget {
             children: [
               _chip(context, 'D0', () async {
                 AppClock.setDebugDayOffset(0);
-                await onChanged();
+                await onChanged('D0');
               }),
               _chip(context, 'D1', () async {
                 AppClock.setDebugDayOffset(1);
-                await onChanged();
+                await onChanged('D1');
               }),
               _chip(context, 'D2', () async {
                 AppClock.setDebugDayOffset(2);
-                await onChanged();
+                await onChanged('D2');
               }),
               _chip(context, 'D3', () async {
                 AppClock.setDebugDayOffset(3);
-                await onChanged();
+                await onChanged('D3');
               }),
               _chip(context, 'D4', () async {
                 AppClock.setDebugDayOffset(4);
-                await onChanged();
+                await onChanged('D4');
               }),
               _chip(context, 'D7', () async {
                 AppClock.setDebugDayOffset(7);
-                await onChanged();
+                await onChanged('D7');
               }),
               _chip(context, 'Reset', () async {
                 AppClock.resetDayOffset();
                 TreeDebugOverrides.reset();
-                await onChanged();
+                await onChanged('Reset');
               }),
             ],
           ),
@@ -1639,27 +1735,27 @@ class _DebugTimeTravelPanel extends StatelessWidget {
             children: [
               _chip(context, 'Water-0', () async {
                 TreeDebugOverrides.fakeDaysSinceLastWater = 0;
-                await onChanged();
+                await onChanged('Water-0');
               }),
               _chip(context, 'Water-2', () async {
                 TreeDebugOverrides.fakeDaysSinceLastWater = 2;
-                await onChanged();
+                await onChanged('Water-2');
               }),
               _chip(context, 'Wilt', () async {
                 TreeDebugOverrides.fakeDaysSinceLastWater = 4;
-                await onChanged();
+                await onChanged('Wilt');
               }),
               _chip(context, 'Dead', () async {
                 TreeDebugOverrides.fakeDaysSinceLastWater = 8;
-                await onChanged();
+                await onChanged('Dead');
               }),
               _chip(context, 'Streak-3', () async {
                 TreeDebugOverrides.fakeStreak = 3;
-                await onChanged();
+                await onChanged('Streak-3');
               }),
               _chip(context, 'Streak-7', () async {
                 TreeDebugOverrides.fakeStreak = 7;
-                await onChanged();
+                await onChanged('Streak-7');
               }),
             ],
           ),
