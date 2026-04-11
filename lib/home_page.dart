@@ -929,8 +929,20 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   String _streakLabel(int streak) {
+    final milestone = _streakMilestoneCopy(streak);
+    if (milestone != null) return 'Day $streak · $milestone';
     if (streak == 1) return 'Cared for 1 day in a row';
     return 'Cared for $streak days in a row';
+  }
+
+  String? _streakMilestoneCopy(int streak) {
+    return switch (streak) {
+      1 => 'A new start',
+      3 => 'It remembers you',
+      7 => 'Growing stronger',
+      30 => 'Deeply rooted',
+      _ => null,
+    };
   }
 
   String _deadStreakLabel(int streak) {
