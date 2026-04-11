@@ -745,23 +745,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                     ),
                     const SizedBox(height: 18),
                     if (tree.healthState == TreeHealthState.dead) ...[
-                      // Memory pill
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.92),
-                            borderRadius: BorderRadius.circular(999),
-                            border: Border.all(color: const Color(0xFFD9E4DA), width: 0.8),
-                            boxShadow: const [BoxShadow(color: Color(0x0A000000), blurRadius: 8, offset: Offset(0, 2))],
-                          ),
-                          child: Text(
-                            'It stayed with you for ${tree.streakDays} day${tree.streakDays == 1 ? '' : 's'}.',
-                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF607365)),
-                          ),
-                        ),
-                      ),
+                      _DeadMemoryPill(streakDays: tree.streakDays),
                       // Start again button
                       SizedBox(
                         width: double.infinity,
@@ -1155,52 +1139,11 @@ class TreeView extends StatelessWidget {
     if (visualState == TreePageVisualState.dead) {
       return Transform.rotate(
         angle: -0.12,
-        child: SizedBox(
-          width: 94,
-          height: 142,
-          child: Stack(
-            alignment: Alignment.bottomCenter,
-            children: [
-              Container(
-                width: 16,
-                height: 98 * stemHeightFactor,
-                decoration: BoxDecoration(
-                  color: palette.trunk,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-              Positioned(
-                bottom: 70,
-                left: 28,
-                child: Transform.rotate(
-                  angle: -0.9 + leafTilt * 0.6,
-                  child: Container(
-                    width: 30,
-                    height: 8,
-                    decoration: BoxDecoration(
-                      color: palette.trunk,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                ),
-              ),
-              Positioned(
-                bottom: 82,
-                right: 24,
-                child: Transform.rotate(
-                  angle: 0.8 + leafTilt * 0.6,
-                  child: Container(
-                    width: 24,
-                    height: 7,
-                    decoration: BoxDecoration(
-                      color: palette.trunk,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
+        child: _DeadTreeShape(
+          trunkColor: palette.trunk,
+          leafColor: palette.leaf,
+          stemHeightFactor: stemHeightFactor,
+          leafTilt: leafTilt,
         ),
       );
     }
@@ -1584,6 +1527,137 @@ class _TreePalette {
     required this.soil,
     required this.ground,
   });
+}
+
+class _DeadTreeShape extends StatelessWidget {
+  const _DeadTreeShape({
+    required this.trunkColor,
+    required this.leafColor,
+    required this.stemHeightFactor,
+    required this.leafTilt,
+  });
+
+  final Color trunkColor;
+  final Color leafColor;
+  final double stemHeightFactor;
+  final double leafTilt;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 104,
+      height: 152,
+      child: Stack(
+        alignment: Alignment.bottomCenter,
+        children: [
+          Container(
+            width: 16,
+            height: 100 * stemHeightFactor,
+            decoration: BoxDecoration(
+              color: trunkColor,
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+          Positioned(
+            bottom: 72,
+            left: 28,
+            child: Transform.rotate(
+              angle: -0.9 + leafTilt * 0.6,
+              child: Container(
+                width: 30,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: trunkColor,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            bottom: 84,
+            right: 24,
+            child: Transform.rotate(
+              angle: 0.8 + leafTilt * 0.6,
+              child: Container(
+                width: 24,
+                height: 7,
+                decoration: BoxDecoration(
+                  color: trunkColor,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            bottom: 8,
+            left: 24,
+            child: Transform.rotate(
+              angle: -0.38,
+              child: Container(
+                width: 11,
+                height: 6,
+                decoration: BoxDecoration(
+                  color: leafColor.withValues(alpha: 0.75),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            bottom: 6,
+            right: 30,
+            child: Transform.rotate(
+              angle: 0.5,
+              child: Container(
+                width: 10,
+                height: 5,
+                decoration: BoxDecoration(
+                  color: leafColor.withValues(alpha: 0.7),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DeadMemoryPill extends StatelessWidget {
+  const _DeadMemoryPill({required this.streakDays});
+
+  final int streakDays;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.92),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: const Color(0xFFD9E4DA), width: 0.8),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x0A000000),
+              blurRadius: 8,
+              offset: Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Text(
+          'It stayed with you for $streakDays day${streakDays == 1 ? '' : 's'}.',
+          style: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF607365),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _TreeVariation {
