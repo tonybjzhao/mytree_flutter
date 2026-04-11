@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'create_tree_sheet.dart';
+import 'iap_service.dart';
 import 'life_category.dart';
 import 'premium_service.dart';
 
@@ -31,17 +32,21 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   static const String _talkStateTreeIdsKey = 'mytree_talk_state_tree_ids_v1';
 
   final TreeService _treeService = TreeService();
-
   final PremiumService _premiumService = PremiumService();
+  final IapService _iapService = IapService();
 
   TreeCollectionModel? _collection;
   bool _premiumUnlocked = false;
+  bool _purchaseBusy = false;
+  bool _paywallOpen = false;
   bool _shouldAddAfterUnlock = false;
   bool _showOnboardingCard = false;
   bool _loading = true;
   bool _watering = false;
 
+  late final AnimationController _breatheController;
   late final AnimationController _swayController;
+  late final Animation<double> _breatheScaleAnimation;
   late final AnimationController _pulseController;
   late final Animation<double> _pulseAnimation;
   late final Animation<double> _glowScaleAnimation;
@@ -51,8 +56,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
   Timer? _feedbackTimer;
   Timer? _careToastTimer;
+  Timer? _milestoneBadgeTimer;
   String? _waterButtonOverride;
   OverlayEntry? _careToastEntry;
+  bool _showMilestoneBadgeGlow = false;
   bool _heldToday = false;
   String? _heldTreeId;
   Set<String> _heldTreeIdsForDate = <String>{};
@@ -76,11 +83,23 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   void initState() {
     super.initState();
 
+    _breatheController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2200),
+    )..repeat(reverse: true);
+
     // Small continuous left-right sway.
     _swayController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 3),
     )..repeat(reverse: true);
+
+    _breatheScaleAnimation = Tween<double>(
+      begin: 0.985,
+      end: 1.015,
+    ).animate(
+      CurvedAnimation(parent: _breatheController, curve: Curves.easeInOut),
+    );
 
     // Short pulse when the user waters.
     _pulseController = AnimationController(
@@ -163,6 +182,39 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       _showOnboardingCard = !onboardingSeen;
       _loading = false;
     });
+    _initIap();
+  }
+
+  Future<void> _initIap() async {
+    await _iapService.init(
+      onPremiumUnlocked: () async {
+        await _premiumService.setPremium(true);
+        if (!mounted) return;
+        setState(() {
+          _premiumUnlocked = true;
+          _purchaseBusy = false;
+        });
+        if (_paywallOpen) {
+          _paywallOpen = false;
+          Navigator.of(context).pop();
+        }
+        if (_shouldAddAfterUnlock) {
+          _shouldAddAfterUnlock = false;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            _openCreateTreeSheet();
+          });
+        }
+      },
+      onError: (message) {
+        if (!mounted) return;
+        setState(() => _purchaseBusy = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message)),
+        );
+      },
+      onInfo: (message) => debugPrint('[IAP] $message'),
+    );
   }
 
   Future<void> _dismissOnboardingCard() async {
@@ -177,21 +229,16 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     if (tree == null || _watering) return;
     if (tree.hasWateredToday) return;
     if (tree.healthState == TreeHealthState.dead) return;
+    final previousStreak = tree.streakDays;
 
     setState(() => _watering = true);
 
     HapticFeedback.lightImpact();
-    setState(() => _waterButtonOverride = 'It feels better now');
-
-    // Overlap effects: drop starts, tree pulse reacts before drop finishes.
-    _dropController.forward(from: 0);
-    _pulseController.forward(from: 0);
-
-    _feedbackTimer?.cancel();
-    _feedbackTimer = Timer(const Duration(seconds: 1), () {
-      if (!mounted) return;
-      setState(() => _waterButtonOverride = null);
-    });
+    _playTreeFeedback(
+      showDrop: true,
+      buttonLabel: 'It feels better now',
+      duration: const Duration(seconds: 1),
+    );
 
     final updatedCollection = await _treeService.waterCurrentTree();
     if (!mounted) return;
@@ -206,6 +253,23 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     _heldTreeIdsForDate.remove(updatedCollection.currentTree.id);
     _talkedTreeIdsForDate.remove(updatedCollection.currentTree.id);
     await _persistInteractionState();
+
+    final newStreak = updatedCollection.currentTree.streakDays;
+    final milestone = _streakMilestoneCopy(newStreak);
+    final reachedMilestone =
+        milestone != null && newStreak > previousStreak;
+
+    if (reachedMilestone) {
+      HapticFeedback.mediumImpact();
+      _playTreeFeedback(
+        buttonLabel: 'Milestone reached',
+        duration: const Duration(milliseconds: 1200),
+      );
+      _triggerMilestoneBadgeGlow();
+      _showMilestoneToast(updatedCollection.currentTree);
+      return;
+    }
+
     _showCareToast(updatedCollection.currentTree.category);
   }
 
@@ -217,7 +281,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     if (_isHeldForCurrentTree(tree)) return;
 
     HapticFeedback.selectionClick();
-    _pulseController.forward(from: 0);
+    _playTreeFeedback();
     setState(() {
       _heldToday = true;
       _heldTreeId = tree.id;
@@ -235,7 +299,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     if (_isTalkedForCurrentTree(tree)) return;
 
     HapticFeedback.selectionClick();
-    _pulseController.forward(from: 0);
+    _playTreeFeedback();
     setState(() {
       _talkedToday = true;
       _talkedTreeId = tree.id;
@@ -305,6 +369,75 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     });
   }
 
+  bool get _isNightTime {
+    final hour = DateTime.now().hour;
+    return hour >= 19 || hour < 6;
+  }
+
+  void _playTreeFeedback({
+    bool showDrop = false,
+    String? buttonLabel,
+    Duration duration = const Duration(milliseconds: 900),
+  }) {
+    if (showDrop) {
+      _dropController.forward(from: 0);
+    }
+    _pulseController.forward(from: 0);
+    if (buttonLabel == null) return;
+    _feedbackTimer?.cancel();
+    setState(() => _waterButtonOverride = buttonLabel);
+    _feedbackTimer = Timer(duration, () {
+      if (!mounted) return;
+      setState(() => _waterButtonOverride = null);
+    });
+  }
+
+  void _replayCompletedMoment() {
+    final tree = _collection?.currentTree;
+    if (tree == null || !tree.hasWateredToday || _watering) return;
+
+    HapticFeedback.selectionClick();
+    _playTreeFeedback(
+      buttonLabel: _isNightTime ? 'Sleeping peacefully' : 'It smiles today',
+    );
+    _showToastMessage(
+      _isNightTime
+          ? 'It settles in for the night.'
+          : 'It brightens when you come back.',
+    );
+  }
+
+  String _headerSubtitle(TreeModel tree) {
+    final base = '${tree.category.title} tree ${tree.category.emoji}';
+    if (!_isNightTime) return base;
+    if (tree.hasWateredToday) return '$base · Resting tonight';
+    return '$base · Waiting quietly';
+  }
+
+  String _growthStageLabel(TreeModel tree) {
+    return switch (tree.growthStage) {
+      TreeGrowthStage.seed => 'Seed stage',
+      TreeGrowthStage.sprout => 'Sprouting',
+      TreeGrowthStage.small => 'Growing leaves',
+      TreeGrowthStage.young => 'Young tree',
+      TreeGrowthStage.mature => 'Rooted canopy',
+    };
+  }
+
+  Color _leafBurstColor(LifeCategory category) {
+    return switch (category) {
+      LifeCategory.health => const Color(0xFF6AB56C),
+      LifeCategory.family => const Color(0xFF78BB72),
+      LifeCategory.work => const Color(0xFF5EA78E),
+      LifeCategory.rest => const Color(0xFF7A98B3),
+    };
+  }
+
+  String _stageBadgeText(TreeModel tree) {
+    final day = math.max(tree.streakDays, 1);
+    return 'Day $day · ${_growthStageLabel(tree)}';
+  }
+
   String _todayDateKey() {
     final now = DateTime.now();
     final month = now.month.toString().padLeft(2, '0');
@@ -369,7 +502,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   void _showPaywall() {
-    showModalBottomSheet(
+    _paywallOpen = true;
+    showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
@@ -417,21 +551,20 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                   width: double.infinity,
                   height: 56,
                   child: ElevatedButton(
-                    onPressed: () async {
-                      await _premiumService.unlockPremium();
-                      if (!mounted) return;
-                      if (!sheetContext.mounted) return;
-
-                      Navigator.of(sheetContext).pop();
-                      setState(() => _premiumUnlocked = true);
-                      if (_shouldAddAfterUnlock) {
-                        _shouldAddAfterUnlock = false;
-                        WidgetsBinding.instance.addPostFrameCallback((_) {
-                          if (!mounted) return;
-                          _openCreateTreeSheet();
-                        });
-                      }
-                    },
+                    onPressed: _purchaseBusy
+                        ? null
+                        : () async {
+                            try {
+                              setState(() => _purchaseBusy = true);
+                              await _iapService.buyPremium();
+                            } catch (e) {
+                              if (!mounted) return;
+                              setState(() => _purchaseBusy = false);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('Purchase failed: $e')),
+                              );
+                            }
+                          },
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF5C8D7C),
                       foregroundColor: Colors.white,
@@ -440,27 +573,47 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                         borderRadius: BorderRadius.circular(28),
                       ),
                     ),
-                    child: const Text(
-                      'Grow more lives 🌱',
-                      style: TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
+                    child: _purchaseBusy
+                        ? const SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Text(
+                            'Grow more lives 🌱',
+                            style: TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
                   ),
                 ),
                 const SizedBox(height: 8),
-                const Text(
-                  r'$2.99 one-time',
-                  style: TextStyle(fontSize: 14, color: Color(0xFF7B8A83)),
+                Text(
+                  '${_iapService.premiumProduct?.price ?? r'$2.99'} one-time',
+                  style: const TextStyle(fontSize: 14, color: Color(0xFF7B8A83)),
                 ),
                 const SizedBox(height: 12),
                 TextButton(
-                  onPressed: () {
-                    Navigator.of(sheetContext).pop();
-                  },
+                  onPressed: _purchaseBusy
+                      ? null
+                      : () async {
+                          try {
+                            setState(() => _purchaseBusy = true);
+                            await _iapService.restorePurchases();
+                          } catch (e) {
+                            if (!mounted) return;
+                            setState(() => _purchaseBusy = false);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Restore failed: $e')),
+                            );
+                          }
+                        },
                   child: const Text(
-                    'Restore',
+                    'Restore Purchase',
                     style: TextStyle(fontSize: 14, color: Color(0xFF5C8D7C)),
                   ),
                 ),
@@ -469,37 +622,64 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           ),
         );
       },
-    );
+    ).whenComplete(() {
+      if (mounted) setState(() => _paywallOpen = false);
+    });
   }
 
   @override
   void dispose() {
     _feedbackTimer?.cancel();
     _careToastTimer?.cancel();
+    _milestoneBadgeTimer?.cancel();
     _removeCareToast();
+    _breatheController.dispose();
     _swayController.dispose();
     _pulseController.dispose();
     _dropController.dispose();
+    _iapService.dispose();
     super.dispose();
   }
 
   void _showCareToast(LifeCategory category) {
-    _showToastMessage(_careMessageFor(category));
+    _showToastMessage(_careMessageFor(category), category: category);
   }
 
   void _showHoldToast() {
-    _showToastMessage('It remembers your kindness.');
+    _showToastMessage('It remembers your kindness.', category: _activeCategory);
   }
 
   void _showTalkToast() {
-    _showToastMessage('It feels seen when you speak to it.');
+    _showToastMessage(
+      'It feels seen when you speak to it.',
+      category: _activeCategory,
+    );
   }
 
-  void _showToastMessage(String message) {
+  void _showMilestoneToast(TreeModel tree) {
+    final milestone = _streakMilestoneCopy(tree.streakDays);
+    if (milestone == null) return;
+    _showToastMessage(
+      'Day ${tree.streakDays} · $milestone',
+      category: tree.category,
+    );
+  }
+
+  void _triggerMilestoneBadgeGlow() {
+    _milestoneBadgeTimer?.cancel();
+    setState(() => _showMilestoneBadgeGlow = true);
+    _milestoneBadgeTimer = Timer(const Duration(milliseconds: 1900), () {
+      if (!mounted) return;
+      setState(() => _showMilestoneBadgeGlow = false);
+    });
+  }
+
+  void _showToastMessage(String message, {LifeCategory? category}) {
     _removeCareToast();
 
     final overlay = Overlay.of(context);
     if (overlay.mounted == false) return;
+    final toastCategory = category ?? _activeCategory;
 
     _careToastEntry = OverlayEntry(
       builder: (context) {
@@ -508,7 +688,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           right: 24,
           bottom: 108,
           child: IgnorePointer(
-            child: _CareToast(message: message),
+            child: _CareToast(
+              message: message,
+              accentColor: _accentColor(toastCategory),
+            ),
           ),
         );
       },
@@ -517,6 +700,36 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     overlay.insert(_careToastEntry!);
     _careToastTimer?.cancel();
     _careToastTimer = Timer(const Duration(seconds: 2), _removeCareToast);
+  }
+
+  LifeCategory get _activeCategory =>
+      _collection?.currentTree.category ?? LifeCategory.health;
+
+  Color _accentColor(LifeCategory category) {
+    return _CategoryTreeStyle.forCategory(category).leaf;
+  }
+
+  Color _actionFillColor(LifeCategory category, {required bool isNight}) {
+    final accent = _accentColor(category);
+    return Color.lerp(accent, const Color(0xFF40645A), isNight ? 0.22 : 0.08) ??
+        accent;
+  }
+
+  Color _softActionColor(LifeCategory category, {required bool isNight}) {
+    final accent = _accentColor(category);
+    return Color.lerp(accent, Colors.white, isNight ? 0.82 : 0.74) ?? accent;
+  }
+
+  Color _softActionBorderColor(LifeCategory category, {required bool isNight}) {
+    final accent = _accentColor(category);
+    return Color.lerp(accent, const Color(0xFFC7D6CE), isNight ? 0.48 : 0.36) ??
+        accent;
+  }
+
+  Color _accentTextColor(LifeCategory category, {required bool isNight}) {
+    final accent = _accentColor(category);
+    return Color.lerp(accent, const Color(0xFF405A51), isNight ? 0.36 : 0.22) ??
+        accent;
   }
 
   void _removeCareToast() {
@@ -543,12 +756,37 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     final visualState = tree == null
         ? TreePageVisualState.growing
         : _visualStateFor(tree);
+    final isNight = _isNightTime;
+    final accentFill = tree == null
+      ? const Color(0xFF5C8D7C)
+      : _actionFillColor(tree.category, isNight: isNight);
+    final softAccent = tree == null
+      ? const Color(0xFFF6F7F4)
+      : _softActionColor(tree.category, isNight: isNight);
+    final softBorder = tree == null
+      ? const Color(0xFFB8CBC3)
+      : _softActionBorderColor(tree.category, isNight: isNight);
+    final accentText = tree == null
+      ? const Color(0xFF5D706A)
+      : _accentTextColor(tree.category, isNight: isNight);
 
     return Scaffold(
-      body: SafeArea(
-        child: _loading || tree == null
-            ? const Center(child: CircularProgressIndicator())
-            : Padding(
+      backgroundColor: isNight ? const Color(0xFFF3F6F1) : const Color(0xFFF7FAF6),
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: IgnorePointer(
+              child: _AmbientGardenBackdrop(
+                category: tree?.category ?? LifeCategory.health,
+                isNight: isNight,
+                visualState: visualState,
+              ),
+            ),
+          ),
+          SafeArea(
+            child: _loading || tree == null
+                ? const Center(child: CircularProgressIndicator())
+                : Padding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 24,
                   vertical: 20,
@@ -583,11 +821,70 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      '${tree.category.title} tree ${tree.category.emoji}',
+                      _headerSubtitle(tree),
                       textAlign: TextAlign.center,
                       style: Theme.of(
                         context,
                       ).textTheme.bodyLarge?.copyWith(fontSize: 17),
+                    ),
+                    const SizedBox(height: 10),
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 420),
+                      curve: Curves.easeOutCubic,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _showMilestoneBadgeGlow
+                            ? const Color(0xFFF7F1CF)
+                            : (isNight
+                                ? const Color(0xFFF0F4EE)
+                                : const Color(0xFFF3F8F2)),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(
+                          color: _showMilestoneBadgeGlow
+                              ? const Color(0xFFE7CE7F)
+                              : (isNight
+                                  ? const Color(0xFFD7E1D6)
+                                  : const Color(0xFFD8E5D9)),
+                        ),
+                        boxShadow: _showMilestoneBadgeGlow
+                            ? [
+                                BoxShadow(
+                                  color: const Color(0xFFE7CE7F)
+                                      .withValues(alpha: 0.28),
+                                  blurRadius: 16,
+                                  spreadRadius: 1,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ]
+                            : null,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (_showMilestoneBadgeGlow) ...[
+                            const Icon(
+                              Icons.auto_awesome,
+                              size: 13,
+                              color: Color(0xFF9E7A2B),
+                            ),
+                            const SizedBox(width: 6),
+                          ],
+                          Text(
+                            _stageBadgeText(tree),
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: _showMilestoneBadgeGlow
+                                  ? const Color(0xFF8A6D2A)
+                                  : const Color(0xFF607267),
+                              letterSpacing: 0.2,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                     if (_showOnboardingCard)
                       Container(
@@ -667,9 +964,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                         alignment: const Alignment(0, -0.15),
                         child: AnimatedBuilder(
                           animation: Listenable.merge([
+                            _breatheController,
                             _swayController,
-                            _pulseAnimation,
-                            _dropAnimation,
+                            _pulseController,
+                            _dropController,
                           ]),
                           builder: (context, _) {
                             return SizedBox(
@@ -687,7 +985,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                                         height: 190,
                                         decoration: BoxDecoration(
                                           shape: BoxShape.circle,
-                                          color: const Color(0xFFF0E7A6),
+                                          color: isNight
+                                              ? const Color(0xFFE7EAC7)
+                                              : const Color(0xFFF0E7A6),
                                           boxShadow: [
                                             BoxShadow(
                                               color: const Color(
@@ -728,6 +1028,11 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                                       );
                                     },
                                   ),
+                                  if (_pulseController.value > 0)
+                                    _LeafBurst(
+                                      progress: _pulseController.value,
+                                      color: _leafBurstColor(tree.category),
+                                    ),
                                   AnimatedSwitcher(
                                     duration: const Duration(milliseconds: 280),
                                     switchInCurve: Curves.easeOutCubic,
@@ -753,12 +1058,15 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                                       key: ValueKey(
                                         '${_collection!.currentIndex}-${tree.streakDays}-${tree.healthState.name}',
                                       ),
-                                      scale: 1.4 * _pulseAnimation.value,
+                                      scale: _heroScaleForStage(tree.growthStage) *
+                                          _breatheScaleAnimation.value *
+                                          _pulseAnimation.value,
                                       child: Transform.rotate(
                                         angle: _treeSwayAngle(tree),
                                         child: TreeView(
                                           tree: tree,
                                           visualState: visualState,
+                                          isNight: isNight,
                                         ),
                                       ),
                                     ),
@@ -808,7 +1116,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                         child: ElevatedButton(
                           onPressed: _watering ? null : _restart,
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF6D7F6D),
+                            backgroundColor: accentFill,
                             foregroundColor: Colors.white,
                             elevation: 0,
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(32)),
@@ -825,12 +1133,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                           width: double.infinity,
                           height: 62,
                           child: ElevatedButton(
-                            onPressed: null,
+                            onPressed: _watering ? null : _replayCompletedMoment,
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFFD5E2DC),
-                              disabledBackgroundColor: const Color(0xFFD5E2DC),
-                              foregroundColor: const Color(0xFF65756F),
-                              disabledForegroundColor: const Color(0xFF65756F),
+                              backgroundColor: softAccent,
+                              foregroundColor: accentText,
                               elevation: 0,
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(32),
@@ -864,14 +1170,14 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                             style: OutlinedButton.styleFrom(
                               side: BorderSide(
                                 color: _isHeldForCurrentTree(tree)
-                                    ? const Color(0xFFCBD7D2)
-                                    : const Color(0xFFB8CBC3),
+                                    ? softBorder
+                                    : softBorder,
                                 width: 1.4,
                               ),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(30),
                               ),
-                              backgroundColor: const Color(0xFFF6F7F4),
+                              backgroundColor: softAccent,
                             ),
                             child: Text(
                               _isHeldForCurrentTree(tree)
@@ -881,8 +1187,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                                 fontSize: 16,
                                 fontWeight: FontWeight.w700,
                                 color: _isHeldForCurrentTree(tree)
-                                    ? const Color(0xFF91A29C)
-                                    : const Color(0xFF5D706A),
+                                    ? accentText.withValues(alpha: 0.6)
+                                    : accentText,
                               ),
                             ),
                           ),
@@ -898,14 +1204,14 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                             style: OutlinedButton.styleFrom(
                               side: BorderSide(
                                 color: _isTalkedForCurrentTree(tree)
-                                    ? const Color(0xFFCBD7D2)
-                                    : const Color(0xFFB8CBC3),
+                                    ? softBorder
+                                    : softBorder,
                                 width: 1.4,
                               ),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(30),
                               ),
-                              backgroundColor: const Color(0xFFF6F7F4),
+                              backgroundColor: softAccent,
                             ),
                             child: Text(
                               _isTalkedForCurrentTree(tree)
@@ -915,8 +1221,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                                 fontSize: 16,
                                 fontWeight: FontWeight.w700,
                                 color: _isTalkedForCurrentTree(tree)
-                                    ? const Color(0xFF91A29C)
-                                    : const Color(0xFF5D706A),
+                                    ? accentText.withValues(alpha: 0.6)
+                                    : accentText,
                               ),
                             ),
                           ),
@@ -928,8 +1234,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                           child: ElevatedButton(
                             onPressed: _watering ? null : _waterToday,
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF5C8D7C),
-                              disabledBackgroundColor: const Color(0xFFB8CAC1),
+                              backgroundColor: accentFill,
+                              disabledBackgroundColor: accentFill.withValues(alpha: 0.48),
                               foregroundColor: Colors.white,
                               disabledForegroundColor: const Color(0xFF6F7F78),
                               elevation: 0,
@@ -951,6 +1257,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 ),
               ),
           ),
+        ],
+      ),
     );
   }
 
@@ -964,13 +1272,34 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       TreeGrowthStage.small => 0.025,
       TreeGrowthStage.young => 0.02,
       TreeGrowthStage.mature => 0.015,
-    };
+    } * (_isNightTime ? 0.42 : 1.0);
     final stateFactor = switch (visualState) {
       TreePageVisualState.wilting => 0.5,
       TreePageVisualState.thirsty => 0.75,
       _ => 1.0,
     };
-    return math.sin(t * math.pi * 2) * amplitude * stateFactor;
+    return _categoryMotionWave(tree.category, t) * amplitude * stateFactor;
+  }
+
+  double _categoryMotionWave(LifeCategory category, double t) {
+    final base = math.sin(t * math.pi * 2);
+    return switch (category) {
+      LifeCategory.health => base,
+      LifeCategory.family =>
+        (base * 0.70) + (math.sin((t + 0.08) * math.pi * 2) * 0.14),
+      LifeCategory.work => math.sin(t * math.pi * 2.35) * 0.72,
+      LifeCategory.rest => math.sin(t * math.pi * 1.35) * 0.64,
+    };
+  }
+
+  double _heroScaleForStage(TreeGrowthStage stage) {
+    return switch (stage) {
+      TreeGrowthStage.seed => 1.14,
+      TreeGrowthStage.sprout => 1.25,
+      TreeGrowthStage.small => 1.38,
+      TreeGrowthStage.young => 1.53,
+      TreeGrowthStage.mature => 1.63,
+    };
   }
 
   TreePageVisualState _visualStateFor(TreeModel tree) {
@@ -1023,6 +1352,13 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   String _statusTitle(TreeModel tree) {
+    if (_isNightTime && tree.hasWateredToday) {
+      return 'It is resting peacefully';
+    }
+    if (_isNightTime && !tree.hasWateredToday) {
+      return 'Waiting quietly tonight';
+    }
+
     return switch (_visualStateFor(tree)) {
       TreePageVisualState.growing => 'Quietly growing',
       TreePageVisualState.completed => 'Cared for today',
@@ -1044,6 +1380,13 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       LifeCategory.work => 'Care for what you are building.',
       LifeCategory.rest => 'Care for stillness and recovery.',
     };
+
+    if (_isNightTime && tree.hasWateredToday) {
+      return 'Come back tomorrow. Something small may change.';
+    }
+    if (_isNightTime) {
+      return 'Even a gentle return tonight still counts.';
+    }
 
     return switch (_visualStateFor(tree)) {
       TreePageVisualState.growing => categoryLine,
@@ -1179,17 +1522,45 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 class TreeView extends StatelessWidget {
   final TreeModel tree;
   final TreePageVisualState visualState;
+  final bool isNight;
 
   const TreeView({
     super.key,
     required this.tree,
     required this.visualState,
+    required this.isNight,
   });
 
   @override
   Widget build(BuildContext context) {
-    final palette = _paletteFor(visualState);
+    final style = _CategoryTreeStyle.forCategory(tree.category);
+    final palette = _paletteFor(visualState, style, isNight);
     final variation = _TreeVariation.fromSeed(tree.createdAtIso);
+    final stageLift = switch (tree.growthStage) {
+      TreeGrowthStage.seed => -12.0,
+      TreeGrowthStage.sprout => -5.0,
+      TreeGrowthStage.small => 2.0,
+      TreeGrowthStage.young => 10.0,
+      TreeGrowthStage.mature => 18.0,
+    };
+    final groundWidth = switch (tree.growthStage) {
+      TreeGrowthStage.seed => 202.0,
+      TreeGrowthStage.sprout => 214.0,
+      TreeGrowthStage.small => 228.0,
+      TreeGrowthStage.young => 243.0,
+      TreeGrowthStage.mature => 256.0,
+    };
+    final soilWidth = switch (tree.growthStage) {
+      TreeGrowthStage.seed => 76.0,
+      TreeGrowthStage.sprout => 83.0,
+      TreeGrowthStage.small => 92.0,
+      TreeGrowthStage.young => 102.0,
+      TreeGrowthStage.mature => 110.0,
+    };
+    final sleepOffset =
+        isNight && visualState != TreePageVisualState.dead ? 11.0 : 0.0;
+    final sleepTilt =
+        isNight && visualState != TreePageVisualState.dead ? -0.056 : 0.0;
 
     return SizedBox(
       width: 260,
@@ -1200,7 +1571,7 @@ class TreeView extends StatelessWidget {
           Positioned(
             bottom: 36,
             child: Container(
-              width: 230,
+              width: groundWidth,
               height: 36,
               decoration: BoxDecoration(
                 color: palette.ground,
@@ -1211,7 +1582,7 @@ class TreeView extends StatelessWidget {
           Positioned(
             bottom: 52,
             child: Container(
-              width: 92,
+              width: soilWidth,
               height: 30,
               decoration: BoxDecoration(
                 color: palette.soil,
@@ -1220,20 +1591,40 @@ class TreeView extends StatelessWidget {
             ),
           ),
           Positioned(
-            bottom: 72,
-            child: Transform.scale(
-              scale: variation.scale,
-              child: _buildTreeShape(palette, variation),
+            bottom: 72 + stageLift - sleepOffset,
+            child: Transform.rotate(
+              angle: sleepTilt,
+              child: Transform.scale(
+                scale: variation.scale,
+                child: _buildTreeShape(palette, variation, style),
+              ),
             ),
           ),
+          if (isNight && visualState != TreePageVisualState.dead)
+            Positioned(
+              top: 46,
+              right: 54,
+              child: Icon(
+                Icons.nightlight_round,
+                size: 18,
+                color: palette.leaf.withValues(alpha: 0.32),
+              ),
+            ),
         ],
       ),
     );
   }
 
-  Widget _buildTreeShape(_TreePalette palette, _TreeVariation variation) {
+  Widget _buildTreeShape(
+    _TreePalette palette,
+    _TreeVariation variation,
+    _CategoryTreeStyle style,
+  ) {
     final leafTilt = variation.leafTiltRadians;
     final stemHeightFactor = variation.stemHeightFactor;
+    final canopyWidthFactor = style.canopyWidthFactor;
+    final topLift = style.topLift;
+    final sideOffset = style.sideOffset;
 
     if (visualState == TreePageVisualState.dead) {
       return Transform.rotate(
@@ -1263,11 +1654,11 @@ class TreeView extends StatelessWidget {
                 ),
               ),
               Positioned(
-                top: 8,
+                top: 8 + topLift,
                 child: Transform.rotate(
                   angle: -0.38 + leafTilt,
                   child: Container(
-                    width: 34,
+                    width: 34 * canopyWidthFactor,
                     height: 20,
                     decoration: BoxDecoration(
                       color: palette.leaf,
@@ -1296,12 +1687,12 @@ class TreeView extends StatelessWidget {
                 ),
               ),
               Positioned(
-                top: 16,
-                left: 10,
+                top: 16 + topLift,
+                left: 10 + sideOffset,
                 child: Transform.rotate(
                   angle: -0.5 + leafTilt,
                   child: Container(
-                    width: 34,
+                    width: 34 * canopyWidthFactor,
                     height: 20,
                     decoration: BoxDecoration(
                       color: palette.leaf,
@@ -1311,12 +1702,12 @@ class TreeView extends StatelessWidget {
                 ),
               ),
               Positioned(
-                top: 10,
-                right: 10,
+                top: 10 + topLift,
+                right: 10 - sideOffset,
                 child: Transform.rotate(
                   angle: 0.55 + leafTilt,
                   child: Container(
-                    width: 36,
+                    width: 36 * canopyWidthFactor,
                     height: 20,
                     decoration: BoxDecoration(
                       color: palette.leaf,
@@ -1345,11 +1736,11 @@ class TreeView extends StatelessWidget {
                 ),
               ),
               Positioned(
-                top: 18,
+                top: 18 + topLift,
                 child: Transform.rotate(
                   angle: leafTilt * 0.55,
                   child: Container(
-                    width: 92,
+                    width: 92 * canopyWidthFactor,
                     height: 54,
                     decoration: BoxDecoration(
                       color: palette.leaf,
@@ -1359,12 +1750,12 @@ class TreeView extends StatelessWidget {
                 ),
               ),
               Positioned(
-                top: 4,
-                left: 20,
+                top: 4 + topLift,
+                left: 20 + sideOffset,
                 child: Transform.rotate(
                   angle: leafTilt,
                   child: Container(
-                    width: 52,
+                    width: 52 * canopyWidthFactor,
                     height: 40,
                     decoration: BoxDecoration(
                       color: palette.leaf.withValues(alpha: 0.94),
@@ -1374,12 +1765,12 @@ class TreeView extends StatelessWidget {
                 ),
               ),
               Positioned(
-                top: 8,
-                right: 16,
+                top: 8 + topLift,
+                right: 16 - sideOffset,
                 child: Transform.rotate(
                   angle: leafTilt * 0.8,
                   child: Container(
-                    width: 46,
+                    width: 46 * canopyWidthFactor,
                     height: 34,
                     decoration: BoxDecoration(
                       color: palette.leaf.withValues(alpha: 0.92),
@@ -1408,11 +1799,11 @@ class TreeView extends StatelessWidget {
                 ),
               ),
               Positioned(
-                top: 42,
+                top: 42 + topLift,
                 child: Transform.rotate(
                   angle: leafTilt * 0.45,
                   child: Container(
-                    width: 116,
+                    width: 116 * canopyWidthFactor,
                     height: 70,
                     decoration: BoxDecoration(
                       color: palette.leaf,
@@ -1422,12 +1813,12 @@ class TreeView extends StatelessWidget {
                 ),
               ),
               Positioned(
-                top: 10,
-                left: 26,
+                top: 10 + topLift,
+                left: 26 + sideOffset,
                 child: Transform.rotate(
                   angle: leafTilt,
                   child: Container(
-                    width: 54,
+                    width: 54 * canopyWidthFactor,
                     height: 48,
                     decoration: BoxDecoration(
                       color: palette.leaf.withValues(alpha: 0.92),
@@ -1437,12 +1828,12 @@ class TreeView extends StatelessWidget {
                 ),
               ),
               Positioned(
-                top: 8,
-                right: 22,
+                top: 8 + topLift,
+                right: 22 - sideOffset,
                 child: Transform.rotate(
                   angle: leafTilt * 0.8,
                   child: Container(
-                    width: 56,
+                    width: 56 * canopyWidthFactor,
                     height: 48,
                     decoration: BoxDecoration(
                       color: palette.leaf.withValues(alpha: 0.92),
@@ -1452,11 +1843,11 @@ class TreeView extends StatelessWidget {
                 ),
               ),
               Positioned(
-                top: 0,
+                top: topLift,
                 child: Transform.rotate(
                   angle: leafTilt * 0.35,
                   child: Container(
-                    width: 68,
+                    width: 68 * canopyWidthFactor,
                     height: 48,
                     decoration: BoxDecoration(
                       color: palette.leaf.withValues(alpha: 0.95),
@@ -1485,11 +1876,11 @@ class TreeView extends StatelessWidget {
                 ),
               ),
               Positioned(
-                top: 54,
+                top: 54 + topLift,
                 child: Transform.rotate(
                   angle: leafTilt * 0.4,
                   child: Container(
-                    width: 130,
+                    width: 130 * canopyWidthFactor,
                     height: 88,
                     decoration: BoxDecoration(
                       color: palette.leaf,
@@ -1499,12 +1890,12 @@ class TreeView extends StatelessWidget {
                 ),
               ),
               Positioned(
-                top: 12,
-                left: 32,
+                top: 12 + topLift,
+                left: 32 + sideOffset,
                 child: Transform.rotate(
                   angle: leafTilt,
                   child: Container(
-                    width: 58,
+                    width: 58 * canopyWidthFactor,
                     height: 52,
                     decoration: BoxDecoration(
                       color: palette.leaf.withValues(alpha: 0.94),
@@ -1514,12 +1905,12 @@ class TreeView extends StatelessWidget {
                 ),
               ),
               Positioned(
-                top: 10,
-                right: 30,
+                top: 10 + topLift,
+                right: 30 - sideOffset,
                 child: Transform.rotate(
                   angle: leafTilt * 0.8,
                   child: Container(
-                    width: 60,
+                    width: 60 * canopyWidthFactor,
                     height: 54,
                     decoration: BoxDecoration(
                       color: palette.leaf.withValues(alpha: 0.94),
@@ -1529,12 +1920,12 @@ class TreeView extends StatelessWidget {
                 ),
               ),
               Positioned(
-                top: 34,
-                left: 10,
+                top: 34 + topLift,
+                left: 10 + sideOffset,
                 child: Transform.rotate(
                   angle: leafTilt * 0.55,
                   child: Container(
-                    width: 46,
+                    width: 46 * canopyWidthFactor,
                     height: 42,
                     decoration: BoxDecoration(
                       color: palette.leaf.withValues(alpha: 0.88),
@@ -1544,12 +1935,12 @@ class TreeView extends StatelessWidget {
                 ),
               ),
               Positioned(
-                top: 38,
-                right: 8,
+                top: 38 + topLift,
+                right: 8 - sideOffset,
                 child: Transform.rotate(
                   angle: leafTilt * 0.45,
                   child: Container(
-                    width: 44,
+                    width: 44 * canopyWidthFactor,
                     height: 40,
                     decoration: BoxDecoration(
                       color: palette.leaf.withValues(alpha: 0.88),
@@ -1559,11 +1950,11 @@ class TreeView extends StatelessWidget {
                 ),
               ),
               Positioned(
-                top: 0,
+                top: topLift,
                 child: Transform.rotate(
                   angle: leafTilt * 0.3,
                   child: Container(
-                    width: 74,
+                    width: 74 * canopyWidthFactor,
                     height: 54,
                     decoration: BoxDecoration(
                       color: palette.leaf.withValues(alpha: 0.96),
@@ -1578,39 +1969,289 @@ class TreeView extends StatelessWidget {
     }
   }
 
-  _TreePalette _paletteFor(TreePageVisualState state) {
-    switch (state) {
-      case TreePageVisualState.growing:
-      case TreePageVisualState.completed:
-      case TreePageVisualState.soothed:
-        return const _TreePalette(
-          leaf: Color(0xFF63B66A),
-          trunk: Color(0xFF6B4B3E),
-          soil: Color(0xFF846258),
-          ground: Color(0xFFDDE9DD),
-        );
-      case TreePageVisualState.thirsty:
-        return const _TreePalette(
-          leaf: Color(0xFF9CB86A),
-          trunk: Color(0xFF6B4B3E),
-          soil: Color(0xFF8B6A5F),
-          ground: Color(0xFFE2E7D9),
-        );
-      case TreePageVisualState.wilting:
-        return const _TreePalette(
-          leaf: Color(0xFFC0A85E),
-          trunk: Color(0xFF705045),
-          soil: Color(0xFF8E6E63),
-          ground: Color(0xFFE9E0D1),
-        );
-      case TreePageVisualState.dead:
-        return const _TreePalette(
-          leaf: Color(0xFF9D9488),
-          trunk: Color(0xFF6E615A),
-          soil: Color(0xFF88746A),
-          ground: Color(0xFFE3DDD8),
-        );
-    }
+  _TreePalette _paletteFor(
+    TreePageVisualState state,
+    _CategoryTreeStyle style,
+    bool isNight,
+  ) {
+    final nightTint = isNight ? const Color(0xFF7A8A93) : null;
+
+    return switch (state) {
+      TreePageVisualState.growing ||
+      TreePageVisualState.completed ||
+      TreePageVisualState.soothed => _TreePalette(
+        leaf: _tint(style.leaf, nightTint, isNight ? 0.26 : 0),
+        trunk: _tint(style.trunk, nightTint, isNight ? 0.12 : 0),
+        soil: _tint(style.soil, nightTint, isNight ? 0.08 : 0),
+        ground: _tint(style.ground, nightTint, isNight ? 0.12 : 0),
+      ),
+      TreePageVisualState.thirsty => _TreePalette(
+        leaf: _tint(style.leaf, const Color(0xFFC4B36D), 0.38),
+        trunk: _tint(style.trunk, const Color(0xFF847168), 0.16),
+        soil: _tint(style.soil, const Color(0xFFB59E86), 0.22),
+        ground: _tint(style.ground, const Color(0xFFF0ECD8), 0.4),
+      ),
+      TreePageVisualState.wilting => _TreePalette(
+        leaf: _tint(style.leaf, const Color(0xFFCC9F61), 0.58),
+        trunk: _tint(style.trunk, const Color(0xFF8A6A59), 0.22),
+        soil: _tint(style.soil, const Color(0xFFAF8E7C), 0.28),
+        ground: _tint(style.ground, const Color(0xFFF2E2CE), 0.48),
+      ),
+      TreePageVisualState.dead => const _TreePalette(
+        leaf: Color(0xFF9D9488),
+        trunk: Color(0xFF6E615A),
+        soil: Color(0xFF88746A),
+        ground: Color(0xFFE3DDD8),
+      ),
+    };
+  }
+
+  Color _tint(Color base, Color? overlay, double amount) {
+    if (overlay == null || amount <= 0) return base;
+    final t = amount.clamp(0.0, 1.0);
+    return Color.lerp(base, overlay, t) ?? base;
+  }
+}
+
+class _AmbientGardenBackdrop extends StatelessWidget {
+  const _AmbientGardenBackdrop({
+    required this.isNight,
+    required this.visualState,
+    this.category = LifeCategory.health,
+  });
+
+  final bool isNight;
+  final TreePageVisualState visualState;
+  final LifeCategory category;
+
+  @override
+  Widget build(BuildContext context) {
+    final topColor = isNight
+        ? const Color(0xFFEDF2EC)
+        : const Color(0xFFFBFCF8);
+    final bottomColor = switch (visualState) {
+      TreePageVisualState.dead => const Color(0xFFF0ECE7),
+      TreePageVisualState.wilting => const Color(0xFFF7F0E3),
+      TreePageVisualState.thirsty => const Color(0xFFF3F5E6),
+      _ => isNight ? const Color(0xFFEAF1E7) : const Color(0xFFEAF5E8),
+    };
+    final accentColor = switch (category) {
+      LifeCategory.health => const Color(0x14A8D5AF),
+      LifeCategory.family => const Color(0x14B8D7B1),
+      LifeCategory.work => const Color(0x149FC9D6),
+      LifeCategory.rest => const Color(0x149EB8D7),
+    };
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [topColor, bottomColor],
+        ),
+      ),
+      child: Stack(
+        children: [
+          _BackdropOrb(
+            alignment: Alignment(-0.92, -0.72),
+            size: 180,
+            color: accentColor,
+          ),
+          const _BackdropOrb(
+            alignment: Alignment(0.9, -0.4),
+            size: 150,
+            color: Color(0x1298C9DA),
+          ),
+          _BackdropOrb(
+            alignment: Alignment(0.0, 0.78),
+            size: 240,
+            color: isNight ? const Color(0x12D8E4EF) : const Color(0x12F0DDA3),
+          ),
+          if (isNight) ...const [
+            _MoonHalo(),
+            _BackdropStar(alignment: Alignment(0.64, -0.78), size: 6),
+            _BackdropStar(alignment: Alignment(0.84, -0.62), size: 4),
+            _BackdropStar(alignment: Alignment(0.48, -0.56), size: 5),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _MoonHalo extends StatelessWidget {
+  const _MoonHalo();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Align(
+      alignment: Alignment(0.78, -0.82),
+      child: Icon(
+        Icons.brightness_2_rounded,
+        size: 32,
+        color: Color(0x66A9B5C1),
+      ),
+    );
+  }
+}
+
+class _BackdropStar extends StatelessWidget {
+  const _BackdropStar({required this.alignment, required this.size});
+
+  final Alignment alignment;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: alignment,
+      child: Container(
+        width: size,
+        height: size,
+        decoration: const BoxDecoration(
+          color: Color(0x55EDF6FF),
+          shape: BoxShape.circle,
+        ),
+      ),
+    );
+  }
+}
+
+class _CategoryTreeStyle {
+  const _CategoryTreeStyle({
+    required this.leaf,
+    required this.trunk,
+    required this.soil,
+    required this.ground,
+    required this.canopyWidthFactor,
+    required this.topLift,
+    required this.sideOffset,
+  });
+
+  final Color leaf;
+  final Color trunk;
+  final Color soil;
+  final Color ground;
+  final double canopyWidthFactor;
+  final double topLift;
+  final double sideOffset;
+
+  factory _CategoryTreeStyle.forCategory(LifeCategory category) {
+    return switch (category) {
+      LifeCategory.health => const _CategoryTreeStyle(
+        leaf: Color(0xFF63B66A),
+        trunk: Color(0xFF6B4B3E),
+        soil: Color(0xFF846258),
+        ground: Color(0xFFDDE9DD),
+        canopyWidthFactor: 1.0,
+        topLift: 0,
+        sideOffset: 0,
+      ),
+      LifeCategory.family => const _CategoryTreeStyle(
+        leaf: Color(0xFF74B67B),
+        trunk: Color(0xFF735448),
+        soil: Color(0xFF8A675F),
+        ground: Color(0xFFE2EBE0),
+        canopyWidthFactor: 1.08,
+        topLift: -2,
+        sideOffset: 4,
+      ),
+      LifeCategory.work => const _CategoryTreeStyle(
+        leaf: Color(0xFF5AA38A),
+        trunk: Color(0xFF624840),
+        soil: Color(0xFF7D635B),
+        ground: Color(0xFFD8E7E1),
+        canopyWidthFactor: 0.92,
+        topLift: 2,
+        sideOffset: -3,
+      ),
+      LifeCategory.rest => const _CategoryTreeStyle(
+        leaf: Color(0xFF7B9FB8),
+        trunk: Color(0xFF675E68),
+        soil: Color(0xFF7A6E79),
+        ground: Color(0xFFDDE3EA),
+        canopyWidthFactor: 1.02,
+        topLift: -4,
+        sideOffset: 1,
+      ),
+    };
+  }
+}
+
+class _BackdropOrb extends StatelessWidget {
+  const _BackdropOrb({
+    required this.alignment,
+    required this.size,
+    required this.color,
+  });
+
+  final Alignment alignment;
+  final double size;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: alignment,
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          color: color,
+          shape: BoxShape.circle,
+        ),
+      ),
+    );
+  }
+}
+
+class _LeafBurst extends StatelessWidget {
+  const _LeafBurst({required this.progress, required this.color});
+
+  final double progress;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    if (progress <= 0) return const SizedBox.shrink();
+
+    const configs = <({double dx, double dy, double size, double angle})>[
+      (dx: -62, dy: -12, size: 11, angle: -0.55),
+      (dx: -28, dy: -72, size: 12, angle: 0.12),
+      (dx: 22, dy: -80, size: 10, angle: -0.15),
+      (dx: 60, dy: -24, size: 11, angle: 0.5),
+    ];
+
+    return Positioned.fill(
+      child: IgnorePointer(
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            for (final config in configs)
+              Positioned(
+                bottom: 132 + config.dy - (18 * progress),
+                child: Transform.translate(
+                  offset: Offset(config.dx, 0),
+                  child: Transform.rotate(
+                    angle: config.angle,
+                    child: Opacity(
+                      opacity: ((1 - progress) * 0.9).clamp(0.0, 1.0),
+                      child: Container(
+                        width: config.size,
+                        height: config.size * 1.35,
+                        decoration: BoxDecoration(
+                          color: color,
+                          borderRadius: BorderRadius.circular(config.size),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
@@ -1799,9 +2440,10 @@ class _TreeVariation {
 }
 
 class _CareToast extends StatelessWidget {
-  const _CareToast({required this.message});
+  const _CareToast({required this.message, required this.accentColor});
 
   final String message;
+  final Color accentColor;
 
   @override
   Widget build(BuildContext context) {
@@ -1821,12 +2463,15 @@ class _CareToast extends StatelessWidget {
       child: Center(
         child: DecoratedBox(
           decoration: BoxDecoration(
-            color: const Color(0xFFF6FAF6).withValues(alpha: 0.96),
+            color: Color.lerp(accentColor, Colors.white, 0.9)?.withValues(alpha: 0.97),
             borderRadius: BorderRadius.circular(22),
-            border: Border.all(color: const Color(0xFFD9E4DD)),
+            border: Border.all(
+              color: Color.lerp(accentColor, const Color(0xFFD9E4DD), 0.68) ??
+                  const Color(0xFFD9E4DD),
+            ),
             boxShadow: [
               BoxShadow(
-                color: const Color(0xFF5C8D7C).withValues(alpha: 0.1),
+                color: accentColor.withValues(alpha: 0.14),
                 blurRadius: 18,
                 offset: const Offset(0, 8),
               ),
