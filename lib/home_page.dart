@@ -3143,6 +3143,7 @@ class _CareToast extends StatelessWidget {
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
                 color: Color(0xFF45665A),
+                decoration: TextDecoration.none,
               ),
             ),
           ),
