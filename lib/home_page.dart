@@ -6,7 +6,6 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'create_tree_sheet.dart';
-import 'dead_tree_overlay.dart';
 import 'life_category.dart';
 import 'premium_service.dart';
 
@@ -404,12 +403,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     final tree = _collection?.currentTree;
 
     return Scaffold(
-      body: Stack(
-        children: [
-          SafeArea(
-            child: _loading || tree == null
-                ? const Center(child: CircularProgressIndicator())
-                : Padding(
+      body: SafeArea(
+        child: _loading || tree == null
+            ? const Center(child: CircularProgressIndicator())
+            : Padding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 24,
                   vertical: 20,
@@ -639,10 +636,14 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      _streakLabel(tree.streakDays),
-                      style: const TextStyle(
+                      tree.healthState == TreeHealthState.dead
+                            ? _deadStreakLabel(tree.streakDays)
+                            : _streakLabel(tree.streakDays),
+                      style: TextStyle(
                         fontSize: 17,
-                        color: Color(0xFF66756D),
+                        color: tree.healthState == TreeHealthState.dead
+                                ? const Color(0xFF6D756F)
+                                : const Color(0xFF66756D),
                       ),
                     ),
                     const SizedBox(height: 6),
@@ -655,7 +656,43 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                       ),
                     ),
                     const SizedBox(height: 18),
-                    if (tree.healthState != TreeHealthState.dead)
+                    if (tree.healthState == TreeHealthState.dead) ...[
+                      // Memory pill
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 12),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.92),
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(color: const Color(0xFFD9E4DA), width: 0.8),
+                            boxShadow: const [BoxShadow(color: Color(0x0A000000), blurRadius: 8, offset: Offset(0, 2))],
+                          ),
+                          child: Text(
+                            'It stayed with you for ${tree.streakDays} day${tree.streakDays == 1 ? '' : 's'}.',
+                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF607365)),
+                          ),
+                        ),
+                      ),
+                      // Start again button
+                      SizedBox(
+                        width: double.infinity,
+                        height: 62,
+                        child: ElevatedButton(
+                          onPressed: _watering ? null : _restart,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF6D7F6D),
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(32)),
+                          ),
+                          child: const Text(
+                            'Start again',
+                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                      ),
+                    ] else
                       SizedBox(
                         width: double.infinity,
                         height: 62,
@@ -690,17 +727,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 ),
               ),
           ),
-          // Dead tree overlay — covers everything when tree has withered.
-          if (!(_loading || tree == null) &&
-              tree.healthState == TreeHealthState.dead)
-            Positioned.fill(
-              child: DeadTreeOverlay(
-                livedDays: tree.streakDays,
-                onRestart: _restart,
-              ),
-            ),
-        ],
-      ),
     );
   }
 
@@ -726,7 +752,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       case TreeHealthState.wilting:
         return 'Still waiting for you';
       case TreeHealthState.dead:
-        return 'This life faded in silence';
+        return 'This tree has withered';
     }
   }
 
@@ -748,13 +774,18 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       case TreeHealthState.wilting:
         return 'Come back soon. ${tree.category.title} can still recover.';
       case TreeHealthState.dead:
-        return 'You can always begin ${tree.category.title.toLowerCase()} again.';
+        return 'A new start can help it grow again.';
     }
   }
 
   String _streakLabel(int streak) {
     if (streak == 1) return 'Cared for 1 day in a row';
     return 'Cared for $streak days in a row';
+  }
+
+  String _deadStreakLabel(int streak) {
+    if (streak == 1) return 'Cared for 1 day before resting';
+    return 'Cared for $streak days before resting';
   }
 
   List<TreeSlotData> _buildTreeSlots({
