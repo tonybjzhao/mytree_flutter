@@ -27,6 +27,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   static const String _onboardingSeenKey = 'mytree_onboarding_seen_v1';
   static const String _holdStateDateKey = 'mytree_hold_state_date_v1';
   static const String _holdStateTreeIdsKey = 'mytree_hold_state_tree_ids_v1';
+  static const String _talkStateDateKey = 'mytree_talk_state_date_v1';
+  static const String _talkStateTreeIdsKey = 'mytree_talk_state_tree_ids_v1';
 
   final TreeService _treeService = TreeService();
 
@@ -54,6 +56,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   bool _heldToday = false;
   String? _heldTreeId;
   Set<String> _heldTreeIdsForDate = <String>{};
+  bool _talkedToday = false;
+  String? _talkedTreeId;
+  Set<String> _talkedTreeIdsForDate = <String>{};
 
   Set<LifeCategory> get _usedCategories =>
       _collection?.trees.map((tree) => tree.category).toSet() ?? {};
@@ -150,7 +155,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     final premium = await _premiumService.isPremiumUnlocked();
     final prefs = await SharedPreferences.getInstance();
     final onboardingSeen = prefs.getBool(_onboardingSeenKey) ?? false;
-    _restoreHeldState(prefs, collection);
+    _restoreInteractionState(prefs, collection);
     if (!mounted) return;
     setState(() {
       _collection = collection;
@@ -195,9 +200,12 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       _watering = false;
       _heldToday = false;
       _heldTreeId = null;
+      _talkedToday = false;
+      _talkedTreeId = null;
     });
     _heldTreeIdsForDate.remove(updatedCollection.currentTree.id);
-    await _persistHeldState();
+    _talkedTreeIdsForDate.remove(updatedCollection.currentTree.id);
+    await _persistInteractionState();
     _showCareToast(updatedCollection.currentTree.category);
   }
 
@@ -215,18 +223,37 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       _heldTreeId = tree.id;
     });
     _heldTreeIdsForDate.add(tree.id);
-    await _persistHeldState();
+    await _persistInteractionState();
     _showHoldToast();
+  }
+
+  Future<void> _saySomething() async {
+    final tree = _collection?.currentTree;
+    if (tree == null || _watering) return;
+    if (tree.healthState == TreeHealthState.dead) return;
+    if (!tree.hasWateredToday) return;
+    if (_isTalkedForCurrentTree(tree)) return;
+
+    HapticFeedback.selectionClick();
+    _pulseController.forward(from: 0);
+    setState(() {
+      _talkedToday = true;
+      _talkedTreeId = tree.id;
+    });
+    _talkedTreeIdsForDate.add(tree.id);
+    await _persistInteractionState();
+    _showTalkToast();
   }
 
   Future<void> _restart() async {
     final updated = await _treeService.restartCurrentTree();
     if (!mounted) return;
     _heldTreeIdsForDate.remove(updated.currentTree.id);
-    await _persistHeldState();
+    _talkedTreeIdsForDate.remove(updated.currentTree.id);
+    await _persistInteractionState();
     setState(() {
       _collection = updated;
-      _syncHeldStateForCurrentTree(updated);
+      _syncInteractionStateForCurrentTree(updated);
     });
   }
 
@@ -235,7 +262,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     if (!mounted) return;
     setState(() {
       _collection = updated;
-      _syncHeldStateForCurrentTree(updated);
+      _syncInteractionStateForCurrentTree(updated);
     });
   }
 
@@ -274,7 +301,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     if (!mounted) return;
     setState(() {
       _collection = updated;
-      _syncHeldStateForCurrentTree(updated);
+      _syncInteractionStateForCurrentTree(updated);
     });
   }
 
@@ -285,36 +312,60 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     return '${now.year}-$month-$day';
   }
 
-  void _restoreHeldState(SharedPreferences prefs, TreeCollectionModel collection) {
+  void _restoreInteractionState(
+    SharedPreferences prefs,
+    TreeCollectionModel collection,
+  ) {
     final today = _todayDateKey();
-    final storedDate = prefs.getString(_holdStateDateKey);
-    final storedIds = prefs.getStringList(_holdStateTreeIdsKey) ?? <String>[];
+    final holdStoredDate = prefs.getString(_holdStateDateKey);
+    final holdStoredIds =
+        prefs.getStringList(_holdStateTreeIdsKey) ?? <String>[];
+    final talkStoredDate = prefs.getString(_talkStateDateKey);
+    final talkStoredIds =
+        prefs.getStringList(_talkStateTreeIdsKey) ?? <String>[];
 
-    if (storedDate == today) {
-      _heldTreeIdsForDate = storedIds.toSet();
+    if (holdStoredDate == today) {
+      _heldTreeIdsForDate = holdStoredIds.toSet();
     } else {
       _heldTreeIdsForDate = <String>{};
       prefs.setString(_holdStateDateKey, today);
       prefs.setStringList(_holdStateTreeIdsKey, <String>[]);
     }
 
-    _syncHeldStateForCurrentTree(collection);
+    if (talkStoredDate == today) {
+      _talkedTreeIdsForDate = talkStoredIds.toSet();
+    } else {
+      _talkedTreeIdsForDate = <String>{};
+      prefs.setString(_talkStateDateKey, today);
+      prefs.setStringList(_talkStateTreeIdsKey, <String>[]);
+    }
+
+    _syncInteractionStateForCurrentTree(collection);
   }
 
-  Future<void> _persistHeldState() async {
+  Future<void> _persistInteractionState() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_holdStateDateKey, _todayDateKey());
     await prefs.setStringList(
       _holdStateTreeIdsKey,
       _heldTreeIdsForDate.toList(growable: false),
     );
+    await prefs.setString(_talkStateDateKey, _todayDateKey());
+    await prefs.setStringList(
+      _talkStateTreeIdsKey,
+      _talkedTreeIdsForDate.toList(growable: false),
+    );
   }
 
-  void _syncHeldStateForCurrentTree(TreeCollectionModel collection) {
+  void _syncInteractionStateForCurrentTree(TreeCollectionModel collection) {
     final tree = collection.currentTree;
     final held = tree.hasWateredToday && _heldTreeIdsForDate.contains(tree.id);
+    final talked =
+        tree.hasWateredToday && _talkedTreeIdsForDate.contains(tree.id);
     _heldToday = held;
     _heldTreeId = held ? tree.id : null;
+    _talkedToday = talked;
+    _talkedTreeId = talked ? tree.id : null;
   }
 
   void _showPaywall() {
@@ -438,6 +489,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
   void _showHoldToast() {
     _showToastMessage('It remembers your kindness.');
+  }
+
+  void _showTalkToast() {
+    _showToastMessage('It feels seen when you speak to it.');
   }
 
   void _showToastMessage(String message) {
@@ -804,9 +859,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                           width: double.infinity,
                           height: 54,
                           child: OutlinedButton(
-                            onPressed: _isHeldForCurrentTree(tree)
-                                ? null
-                                : _holdGently,
+                            onPressed:
+                                _isHeldForCurrentTree(tree) ? null : _holdGently,
                             style: OutlinedButton.styleFrom(
                               side: BorderSide(
                                 color: _isHeldForCurrentTree(tree)
@@ -827,6 +881,40 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                                 fontSize: 16,
                                 fontWeight: FontWeight.w700,
                                 color: _isHeldForCurrentTree(tree)
+                                    ? const Color(0xFF91A29C)
+                                    : const Color(0xFF5D706A),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        SizedBox(
+                          width: double.infinity,
+                          height: 54,
+                          child: OutlinedButton(
+                            onPressed: _isTalkedForCurrentTree(tree)
+                                ? null
+                                : _saySomething,
+                            style: OutlinedButton.styleFrom(
+                              side: BorderSide(
+                                color: _isTalkedForCurrentTree(tree)
+                                    ? const Color(0xFFCBD7D2)
+                                    : const Color(0xFFB8CBC3),
+                                width: 1.4,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(30),
+                              ),
+                              backgroundColor: const Color(0xFFF6F7F4),
+                            ),
+                            child: Text(
+                              _isTalkedForCurrentTree(tree)
+                                  ? 'You spoke to it today'
+                                  : 'Say something',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                                color: _isTalkedForCurrentTree(tree)
                                     ? const Color(0xFF91A29C)
                                     : const Color(0xFF5D706A),
                               ),
@@ -895,7 +983,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     if (tree.healthState == TreeHealthState.thirsty) {
       return TreePageVisualState.thirsty;
     }
-    if (_isHeldForCurrentTree(tree)) {
+    if (_isHeldForCurrentTree(tree) || _isTalkedForCurrentTree(tree)) {
       return TreePageVisualState.soothed;
     }
     if (tree.hasWateredToday) {
@@ -937,8 +1025,12 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   String _statusTitle(TreeModel tree) {
     return switch (_visualStateFor(tree)) {
       TreePageVisualState.growing => 'Quietly growing',
-      TreePageVisualState.completed => 'Held gently today',
-      TreePageVisualState.soothed => 'It feels calm and cared for',
+      TreePageVisualState.completed => 'Cared for today',
+      TreePageVisualState.soothed => _isHeldForCurrentTree(tree)
+          ? (_isTalkedForCurrentTree(tree)
+              ? 'It feels deeply cared for'
+              : 'It feels calm and cared for')
+          : 'It feels seen and encouraged',
       TreePageVisualState.thirsty => 'A little thirsty',
       TreePageVisualState.wilting => 'Still waiting for you',
       TreePageVisualState.dead => 'This tree has withered',
@@ -955,8 +1047,11 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
     return switch (_visualStateFor(tree)) {
       TreePageVisualState.growing => categoryLine,
-      TreePageVisualState.completed => 'One more gentle action is available today.',
-      TreePageVisualState.soothed => 'Come back tomorrow. Something small may change.',
+      TreePageVisualState.completed => 'Two gentle actions are available today.',
+      TreePageVisualState.soothed =>
+        (_isHeldForCurrentTree(tree) && _isTalkedForCurrentTree(tree))
+            ? 'Come back tomorrow. Something small may change.'
+            : 'One more gentle action is available today.',
       TreePageVisualState.thirsty => '${tree.category.title} needs a gentle return today.',
       TreePageVisualState.wilting => 'Come back soon. ${tree.category.title} can still recover.',
       TreePageVisualState.dead => 'A new start can help it grow again.',
@@ -987,6 +1082,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
   bool _isHeldForCurrentTree(TreeModel tree) {
     return _heldToday && _heldTreeId == tree.id && tree.hasWateredToday;
+  }
+
+  bool _isTalkedForCurrentTree(TreeModel tree) {
+    return _talkedToday && _talkedTreeId == tree.id && tree.hasWateredToday;
   }
 
   List<TreeSlotData> _buildTreeSlots({
