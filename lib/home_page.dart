@@ -23,6 +23,8 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   static const String _onboardingSeenKey = 'mytree_onboarding_seen_v1';
+  static const String _holdStateDateKey = 'mytree_hold_state_date_v1';
+  static const String _holdStateTreeIdsKey = 'mytree_hold_state_tree_ids_v1';
 
   final TreeService _treeService = TreeService();
 
@@ -47,6 +49,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   Timer? _careToastTimer;
   String? _waterButtonOverride;
   OverlayEntry? _careToastEntry;
+  bool _heldToday = false;
+  String? _heldTreeId;
+  Set<String> _heldTreeIdsForDate = <String>{};
 
   Set<LifeCategory> get _usedCategories =>
       _collection?.trees.map((tree) => tree.category).toSet() ?? {};
@@ -143,6 +148,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     final premium = await _premiumService.isPremiumUnlocked();
     final prefs = await SharedPreferences.getInstance();
     final onboardingSeen = prefs.getBool(_onboardingSeenKey) ?? false;
+    _restoreHeldState(prefs, collection);
     if (!mounted) return;
     setState(() {
       _collection = collection;
@@ -185,20 +191,50 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     setState(() {
       _collection = updatedCollection;
       _watering = false;
+      _heldToday = false;
+      _heldTreeId = null;
     });
+    _heldTreeIdsForDate.remove(updatedCollection.currentTree.id);
+    await _persistHeldState();
     _showCareToast(updatedCollection.currentTree.category);
+  }
+
+  Future<void> _holdGently() async {
+    final tree = _collection?.currentTree;
+    if (tree == null || _watering) return;
+    if (tree.healthState == TreeHealthState.dead) return;
+    if (!tree.hasWateredToday) return;
+    if (_isHeldForCurrentTree(tree)) return;
+
+    HapticFeedback.selectionClick();
+    _pulseController.forward(from: 0);
+    setState(() {
+      _heldToday = true;
+      _heldTreeId = tree.id;
+    });
+    _heldTreeIdsForDate.add(tree.id);
+    await _persistHeldState();
+    _showHoldToast();
   }
 
   Future<void> _restart() async {
     final updated = await _treeService.restartCurrentTree();
     if (!mounted) return;
-    setState(() => _collection = updated);
+    _heldTreeIdsForDate.remove(updated.currentTree.id);
+    await _persistHeldState();
+    setState(() {
+      _collection = updated;
+      _syncHeldStateForCurrentTree(updated);
+    });
   }
 
   Future<void> _selectTree(int index) async {
     final updated = await _treeService.selectTree(index);
     if (!mounted) return;
-    setState(() => _collection = updated);
+    setState(() {
+      _collection = updated;
+      _syncHeldStateForCurrentTree(updated);
+    });
   }
 
   Future<void> _handleAddTree() async {
@@ -234,7 +270,49 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   Future<void> _createTree(LifeCategory category) async {
     final updated = await _treeService.addTree(category);
     if (!mounted) return;
-    setState(() => _collection = updated);
+    setState(() {
+      _collection = updated;
+      _syncHeldStateForCurrentTree(updated);
+    });
+  }
+
+  String _todayDateKey() {
+    final now = DateTime.now();
+    final month = now.month.toString().padLeft(2, '0');
+    final day = now.day.toString().padLeft(2, '0');
+    return '${now.year}-$month-$day';
+  }
+
+  void _restoreHeldState(SharedPreferences prefs, TreeCollectionModel collection) {
+    final today = _todayDateKey();
+    final storedDate = prefs.getString(_holdStateDateKey);
+    final storedIds = prefs.getStringList(_holdStateTreeIdsKey) ?? <String>[];
+
+    if (storedDate == today) {
+      _heldTreeIdsForDate = storedIds.toSet();
+    } else {
+      _heldTreeIdsForDate = <String>{};
+      prefs.setString(_holdStateDateKey, today);
+      prefs.setStringList(_holdStateTreeIdsKey, <String>[]);
+    }
+
+    _syncHeldStateForCurrentTree(collection);
+  }
+
+  Future<void> _persistHeldState() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_holdStateDateKey, _todayDateKey());
+    await prefs.setStringList(
+      _holdStateTreeIdsKey,
+      _heldTreeIdsForDate.toList(growable: false),
+    );
+  }
+
+  void _syncHeldStateForCurrentTree(TreeCollectionModel collection) {
+    final tree = collection.currentTree;
+    final held = tree.hasWateredToday && _heldTreeIdsForDate.contains(tree.id);
+    _heldToday = held;
+    _heldTreeId = held ? tree.id : null;
   }
 
   void _showPaywall() {
@@ -353,6 +431,14 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   void _showCareToast(LifeCategory category) {
+    _showToastMessage(_careMessageFor(category));
+  }
+
+  void _showHoldToast() {
+    _showToastMessage('It remembers your kindness.');
+  }
+
+  void _showToastMessage(String message) {
     _removeCareToast();
 
     final overlay = Overlay.of(context);
@@ -365,7 +451,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           right: 24,
           bottom: 108,
           child: IgnorePointer(
-            child: _CareToast(message: _careMessageFor(category)),
+            child: _CareToast(message: message),
           ),
         );
       },
@@ -689,35 +775,99 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                         ),
                       ),
                     ] else
-                      SizedBox(
-                        width: double.infinity,
-                        height: 62,
-                        child: ElevatedButton(
-                          onPressed: (tree.hasWateredToday || _watering)
-                              ? null
-                              : _waterToday,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF5C8D7C),
-                            disabledBackgroundColor: const Color(0xFFB8CAC1),
-                            foregroundColor: Colors.white,
-                            disabledForegroundColor: const Color(0xFF6F7F78),
-                            elevation: 0,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(32),
+                      if (tree.hasWateredToday) ...[
+                        SizedBox(
+                          width: double.infinity,
+                          height: 62,
+                          child: ElevatedButton(
+                            onPressed: null,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFFD5E2DC),
+                              disabledBackgroundColor: const Color(0xFFD5E2DC),
+                              foregroundColor: const Color(0xFF65756F),
+                              disabledForegroundColor: const Color(0xFF65756F),
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(32),
+                              ),
                             ),
-                          ),
-                          child: Text(
-                            _waterButtonOverride ??
-                                (tree.hasWateredToday
-                                    ? 'Watered today'
-                                    : 'Water today'),
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w700,
+                            child: AnimatedSwitcher(
+                              duration: const Duration(milliseconds: 240),
+                              switchInCurve: Curves.easeOutCubic,
+                              switchOutCurve: Curves.easeInCubic,
+                              transitionBuilder: (child, animation) {
+                                return FadeTransition(opacity: animation, child: child);
+                              },
+                              child: Text(
+                                _waterButtonOverride ?? 'Done today',
+                                key: ValueKey(_waterButtonOverride ?? 'Done today'),
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
                             ),
                           ),
                         ),
-                      ),
+                        const SizedBox(height: 10),
+                        SizedBox(
+                          width: double.infinity,
+                          height: 54,
+                          child: OutlinedButton(
+                            onPressed: _isHeldForCurrentTree(tree)
+                                ? null
+                                : _holdGently,
+                            style: OutlinedButton.styleFrom(
+                              side: BorderSide(
+                                color: _isHeldForCurrentTree(tree)
+                                    ? const Color(0xFFCBD7D2)
+                                    : const Color(0xFFB8CBC3),
+                                width: 1.4,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(30),
+                              ),
+                              backgroundColor: const Color(0xFFF6F7F4),
+                            ),
+                            child: Text(
+                              _isHeldForCurrentTree(tree)
+                                  ? 'Held gently today'
+                                  : 'Hold gently',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                                color: _isHeldForCurrentTree(tree)
+                                    ? const Color(0xFF91A29C)
+                                    : const Color(0xFF5D706A),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ] else
+                        SizedBox(
+                          width: double.infinity,
+                          height: 62,
+                          child: ElevatedButton(
+                            onPressed: _watering ? null : _waterToday,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF5C8D7C),
+                              disabledBackgroundColor: const Color(0xFFB8CAC1),
+                              foregroundColor: Colors.white,
+                              disabledForegroundColor: const Color(0xFF6F7F78),
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(32),
+                              ),
+                            ),
+                            child: Text(
+                              _waterButtonOverride ?? 'Water today',
+                              style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ),
                     const SizedBox(height: 12),
                   ],
                 ),
@@ -742,6 +892,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   String _statusTitle(TreeModel tree) {
     switch (tree.healthState) {
       case TreeHealthState.healthy:
+        if (_isHeldForCurrentTree(tree)) return 'It feels calm and cared for';
         return tree.hasWateredToday ? 'Held gently today' : 'Quietly growing';
       case TreeHealthState.thirsty:
         return 'A little thirsty';
@@ -762,8 +913,11 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
     switch (tree.healthState) {
       case TreeHealthState.healthy:
+        if (_isHeldForCurrentTree(tree)) {
+          return 'Come back tomorrow. Something small may change.';
+        }
         return tree.hasWateredToday
-            ? 'Your care reached it today.'
+            ? 'One more gentle action is available today.'
             : categoryLine;
       case TreeHealthState.thirsty:
         return '${tree.category.title} needs a gentle return today.';
@@ -782,6 +936,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   String _deadStreakLabel(int streak) {
     if (streak == 1) return 'Cared for 1 day before resting';
     return 'Cared for $streak days before resting';
+  }
+
+  bool _isHeldForCurrentTree(TreeModel tree) {
+    return _heldToday && _heldTreeId == tree.id && tree.hasWateredToday;
   }
 
   List<TreeSlotData> _buildTreeSlots({
