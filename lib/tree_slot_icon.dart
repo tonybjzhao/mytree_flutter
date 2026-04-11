@@ -59,7 +59,7 @@ class TreeSlotIconButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final size = slot.selected ? 54.0 : 48.0;
+    final size = slot.selected ? 56.0 : 48.0;
     final colors = _colorsFor(slot.tone);
     final backgroundColor = slot.locked
         ? const Color(0xFFF1F3EF)
@@ -75,17 +75,26 @@ class TreeSlotIconButton extends StatelessWidget {
         curve: Curves.easeOut,
         width: size,
         height: size,
+        transform: slot.selected
+          ? Matrix4.diagonal3Values(1.08, 1.08, 1.0)
+            : Matrix4.identity(),
         decoration: BoxDecoration(
           color: backgroundColor,
           borderRadius: BorderRadius.circular(size / 2),
-          border: slot.locked
-              ? Border.all(color: const Color(0xFFDCE3DC))
-              : null,
+          border: Border.all(
+            color: slot.locked
+                ? const Color(0xFFDCE3DC)
+                : (slot.selected
+                    ? const Color(0xFF84B39E)
+                    : const Color(0x00000000)),
+            width: slot.selected ? 1.5 : 0,
+          ),
           boxShadow: slot.selected
               ? [
                   BoxShadow(
-                    color: const Color(0xFF5C8D7C).withValues(alpha: 0.14),
-                    blurRadius: 12,
+                    color: const Color(0xFF5C8D7C).withValues(alpha: 0.20),
+                    blurRadius: 14,
+                    spreadRadius: 0.5,
                     offset: const Offset(0, 6),
                   ),
                 ]

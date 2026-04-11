@@ -502,11 +502,11 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
     HapticFeedback.selectionClick();
     _playTreeFeedback(
-      buttonLabel: _isNightTime ? 'Sleeping peacefully' : 'It smiles today',
+      buttonLabel: _isNightTime ? 'Sleeping peacefully 🌙' : 'You showed up today 🌱',
     );
     _showToastMessage(
       _isNightTime
-          ? 'It settles in for the night.'
+          ? 'Your tree is asleep now 🌙'
           : 'It brightens when you come back.',
     );
   }
@@ -1498,37 +1498,62 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                       ),
                     ] else
                       if (tree.hasWateredToday) ...[
-                        SizedBox(
-                          width: double.infinity,
-                          height: 54,
-                          child: ElevatedButton(
-                            onPressed: _watering ? null : _replayCompletedMoment,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: softAccent,
-                              foregroundColor: accentText,
-                              elevation: 0,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(32),
+                        if (_isNightTime)
+                          Container(
+                            width: double.infinity,
+                            height: 52,
+                            decoration: BoxDecoration(
+                              color: softAccent,
+                              borderRadius: BorderRadius.circular(32),
+                              border: Border.all(
+                                color: softBorder.withValues(alpha: 0.72),
+                                width: 1.0,
                               ),
                             ),
-                            child: AnimatedSwitcher(
-                              duration: const Duration(milliseconds: 240),
-                              switchInCurve: Curves.easeOutCubic,
-                              switchOutCurve: Curves.easeInCubic,
-                              transitionBuilder: (child, animation) {
-                                return FadeTransition(opacity: animation, child: child);
-                              },
-                              child: Text(
-                                _waterButtonOverride ?? 'Done today',
-                                key: ValueKey(_waterButtonOverride ?? 'Done today'),
-                                style: const TextStyle(
-                                  fontSize: 17,
-                                  fontWeight: FontWeight.w700,
+                            alignment: Alignment.center,
+                            child: const Text(
+                              'Sleeping peacefully 🌙',
+                              style: TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF4E735F),
+                              ),
+                            ),
+                          )
+                        else
+                          SizedBox(
+                            width: double.infinity,
+                            height: 54,
+                            child: ElevatedButton(
+                              onPressed: _watering ? null : _replayCompletedMoment,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: softAccent,
+                                foregroundColor: accentText,
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(32),
+                                ),
+                              ),
+                              child: AnimatedSwitcher(
+                                duration: const Duration(milliseconds: 240),
+                                switchInCurve: Curves.easeOutCubic,
+                                switchOutCurve: Curves.easeInCubic,
+                                transitionBuilder: (child, animation) {
+                                  return FadeTransition(opacity: animation, child: child);
+                                },
+                                child: Text(
+                                  _waterButtonOverride ?? 'You showed up today 🌱',
+                                  key: ValueKey(
+                                    _waterButtonOverride ?? 'You showed up today 🌱',
+                                  ),
+                                  style: const TextStyle(
+                                    fontSize: 17,
+                                    fontWeight: FontWeight.w700,
+                                  ),
                                 ),
                               ),
                             ),
                           ),
-                        ),
                         const SizedBox(height: 6),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.center,
